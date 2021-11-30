@@ -412,6 +412,7 @@ int main(int argc, char **argv)
 #endif
 #endif
 
+#if 0
   FILE* pebsfile = fopen("pebs.txt", "w+");
   assert(pebsfile != NULL);
   for (uint64_t addr = (uint64_t)p; addr < (uint64_t)p + size; addr += (2*1024*1024)) {
@@ -421,7 +422,7 @@ int main(int argc, char **argv)
       fprintf(pebsfile, "0x%lx:\t%lu\t%lu\t%lu\n", pg->va, pg->tot_accesses[DRAMREAD], pg->tot_accesses[NVMREAD], pg->tot_accesses[WRITE]);
     }
   }
-
+#endif
   //hemem_stop_timing();
 
   for (i = 0; i < threads; i++) {
