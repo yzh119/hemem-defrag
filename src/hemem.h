@@ -38,7 +38,7 @@ extern "C" {
 
 //#define HEMEM_DEBUG
 //#define USE_PEBS
-//#define STATS_THREAD
+#define STATS_THREAD
 
 #define USE_DMA
 #define NUM_CHANNS 2
@@ -73,12 +73,12 @@ extern "C" {
 #define FAULT_THREAD_CPU  (0)
 #define STATS_THREAD_CPU  (23)
 
-FILE *hememlogf;
+extern FILE *hememlogf;
 //#define LOG(...) fprintf(stderr, __VA_ARGS__)
 //#define LOG(...)	fprintf(hememlogf, __VA_ARGS__)
 #define LOG(str, ...) while(0) {}
 
-FILE *timef;
+extern FILE *timef;
 extern bool timing;
 
 static inline void log_time(const char* fmt, ...)
@@ -96,7 +96,7 @@ static inline void log_time(const char* fmt, ...)
 //#define LOG_TIME(str, ...) fprintf(timef, str, __VA_ARGS__)
 #define LOG_TIME(str, ...) while(0) {}
 
-FILE *statsf;
+extern FILE *statsf;
 #define LOG_STATS(str, ...) fprintf(stderr, str,  __VA_ARGS__)
 //#define LOG_STATS(str, ...) fprintf(statsf, str, __VA_ARGS__)
 //#define LOG_STATS(str, ...) while (0) {}

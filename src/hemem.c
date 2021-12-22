@@ -58,6 +58,10 @@ uint64_t migration_waits = 0;
 static bool cr3_set = false;
 uint64_t cr3 = 0;
 
+FILE* hememlogf;
+FILE* statsf;
+FILE* timef;
+
 #ifndef USE_DMA
 pthread_t copy_threads[MAX_COPY_THREADS];
 #endif

@@ -150,25 +150,28 @@ void *pebs_scan_thread()
                   page->accesses[j]++;
                   page->tot_accesses[j]++;
                   if (page->accesses[WRITE] >= HOT_WRITE_THRESHOLD) {
-                    if (!page->hot || !page->ring_present) {
+                    if (!page->hot && !page->ring_present) {
                         make_hot_request(page);
                     }
                   }
                   else if (page->accesses[DRAMREAD] + page->accesses[NVMREAD] >= HOT_READ_THRESHOLD) {
-                    if (!page->hot || !page->ring_present) {
+                    if (!page->hot && !page->ring_present) {
                         make_hot_request(page);
                     }
                   }
                   else if ((page->accesses[WRITE] < HOT_WRITE_THRESHOLD) && (page->accesses[DRAMREAD] + page->accesses[NVMREAD] < HOT_READ_THRESHOLD)) {
-                    if (page->hot || !page->ring_present) {
+                    if (page->hot && !page->ring_present) {
                         make_cold_request(page);
                     }
                  }
 
-                  page->accesses[j] >>= (global_clock - page->local_clock);
+                  page->accesses[DRAMREAD] >>= (global_clock - page->local_clock);
+                  page->accesses[NVMREAD] >>= (global_clock - page->local_clock);
+                  page->accesses[WRITE] >>= (global_clock - page->local_clock);
                   page->local_clock = global_clock;
                   if (page->accesses[j] > PEBS_COOLING_THRESHOLD) {
                     global_clock++;
+                    cools++;
                     need_cool_dram = true;
                     need_cool_nvm = true;
                   }
@@ -409,6 +412,7 @@ void *pebs_policy_thread()
   }
 
   for (;;) {
+    // free pages using free page ring buffer
     while(!ring_buf_empty(free_page_ring)) {
         struct fifo_list *list;
         page = (struct hemem_page*)ring_buf_get(free_page_ring);
@@ -429,6 +433,7 @@ void *pebs_policy_thread()
     }
 
     num_ring_reqs = 0;
+    // handle hot requests from hot buffer by moving pages to hot list
     while(!ring_buf_empty(hot_ring) && num_ring_reqs < HOT_RING_REQS_THRESHOLD) {
 		    page = (struct hemem_page*)ring_buf_get(hot_ring);
         if (page == NULL) {
@@ -443,6 +448,7 @@ void *pebs_policy_thread()
 	  }
 
     num_ring_reqs = 0;
+    // handle cold requests from cold buffer by moving pages to cold list
     while(!ring_buf_empty(cold_ring) && num_ring_reqs < COLD_RING_REQS_THRESHOLD) {
         page = (struct hemem_page*)ring_buf_get(cold_ring);
         if (page == NULL) {
@@ -480,6 +486,8 @@ void *pebs_policy_thread()
         if (np != NULL) {
           assert(!(np->present));
 
+          update_current_cool_page(&cur_cool_in_dram, &cur_cool_in_nvm, np);
+
           LOG("%lx: cold %lu -> hot %lu\t slowmem.hot: %lu, slowmem.cold: %lu\t fastmem.hot: %lu, fastmem.cold: %lu\n",
                 p->va, p->devdax_offset, np->devdax_offset, nvm_hot_list.numentries, nvm_cold_list.numentries, dram_hot_list.numentries, dram_cold_list.numentries);
 
@@ -509,11 +517,15 @@ void *pebs_policy_thread()
           goto out;
         }
         assert(cp != NULL);
+
+        update_current_cool_page(&cur_cool_in_dram, &cur_cool_in_nvm, cp);
          
         // find a free nvm page to move the cold dram page to
         np = dequeue_fifo(&nvm_free_list);
         if (np != NULL) {
           assert(!(np->present));
+
+          update_current_cool_page(&cur_cool_in_dram, &cur_cool_in_nvm, np);
 
           LOG("%lx: hot %lu -> cold %lu\t slowmem.hot: %lu, slowmem.cold: %lu\t fastmem.hot: %lu, fastmem.cold: %lu\n",
                 cp>va, cp->devdax_offset, np->devdax_offset, nvm_hot_list.numentries, nvm_cold_list.numentries, dram_hot_list.numentries, dram_cold_list.numentries);
