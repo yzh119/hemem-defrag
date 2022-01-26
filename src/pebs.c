@@ -329,7 +329,7 @@ struct hemem_page* partial_cool_peek_and_move(struct fifo_list *hot, struct fifo
   }
 
   for (int i = 0; i < COOLING_PAGES; i++) {
-    p = next_page(hot, current);
+    next_page(hot, current, &p);
     if (p == NULL) {
         break;
     }
@@ -379,11 +379,11 @@ void update_current_cool_page(struct hemem_page** cur_cool_in_dram, struct hemem
 
     if (page == *cur_cool_in_dram) {
         assert(page->list == &dram_hot_list);
-        *cur_cool_in_dram = next_page(page->list, page);
+        next_page(page->list, page, cur_cool_in_dram);
     }
     if (page == *cur_cool_in_nvm) {
         assert(page->list == &nvm_hot_list);
-        *cur_cool_in_nvm = next_page(page->list, page);
+        next_page(page->list, page, cur_cool_in_nvm);
     }
 }
 

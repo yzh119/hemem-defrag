@@ -55,7 +55,6 @@ int threads;
 
 uint64_t hot_start = 0;
 uint64_t hotsize = 0;
-uint64_t hot_offset_page = 0;
 bool move_hotset = false;
 
 struct gups_args {
@@ -82,6 +81,8 @@ static inline uint64_t rdtscp(void)
 
 static unsigned long updates, nelems;
 
+
+#if 0
 static void *print_instantaneous_gups()
 {
   uint64_t last_second_gups[threads];
@@ -112,7 +113,7 @@ static void *print_instantaneous_gups()
 
   return NULL;
 }
-
+#endif
 
 static uint64_t lfsr_fast(uint64_t lfsr)
 {
@@ -167,8 +168,6 @@ static void *do_gups(void *arguments)
   char data[elt_size];
   uint64_t lfsr;
   uint64_t hot_num;
-  uint64_t offset;
-  uint64_t start, end;
 
   srand(args->tid);
   lfsr = rand();
@@ -183,7 +182,6 @@ static void *do_gups(void *arguments)
     if (hot_num < 90) {
       lfsr = lfsr_fast(lfsr);
       index1 = args->hot_start + (lfsr % args->hotsize);
-      start = rdtscp();
       if (elt_size == 8) {
         uint64_t  tmp = field[index1];
         tmp = tmp + i;
@@ -194,12 +192,10 @@ static void *do_gups(void *arguments)
         memset(data, data[0] + i, elt_size);
         memcpy(&field[index1 * elt_size], data, elt_size);
       }
-      end = rdtscp();
     }
     else {
       lfsr = lfsr_fast(lfsr);
       index2 = lfsr % (args->size);
-      start = rdtscp();
       if (elt_size == 8) {
         uint64_t tmp = field[index2];
         tmp = tmp + i;
@@ -210,7 +206,6 @@ static void *do_gups(void *arguments)
         memset(data, data[0] + i, elt_size);
         memcpy(&field[index2 * elt_size], data, elt_size);
       }
-      end = rdtscp();
     }
   }
 
@@ -372,45 +367,6 @@ int main(int argc, char **argv)
   printf("GUPS = %.10f\n", gups);
 
   //memset(thread_gups, 0, sizeof(thread_gups));
-#if 0
-#ifdef HOTSPOT
-  move_hotset = true;
-  hot_offset_page = hotsize / GUPS_PAGE_SIZE;
-  //hot_start = (16UL * 1024UL * 1024UL * 1024UL) / elt_size;              // 16GB to the right;
-  printf("hot_start: %lu\thot_size: %lu\n", hot_start, hotsize);
-  printf("hot_offset_page: %lu\n", hot_offset_page);
-
-  filename = "indices3.txt";
-
-  printf("Timing.\n");
-  gettimeofday(&starttime, NULL);
-
-  // spawn gups worker threads
-  for (i = 0; i < threads; i++) {
-    ga[i]->tid = i;
-    ga[i]->iters = updates;
-    ga[i]->size = nelems;
-    ga[i]->elt_size = elt_size;
-    int r = pthread_create(&t[i], NULL, do_gups, (void*)ga[i]);
-    assert(r == 0);
-  }
-
-  // wait for worker threads
-  for (i = 0; i < threads; i++) {
-    int r = pthread_join(t[i], NULL);
-    assert(r == 0);
-  }
-
-  gettimeofday(&stoptime, NULL);
-
-  secs = elapsed(&starttime, &stoptime);
-  printf("Elapsed time: %.4f seconds.\n", secs);
-  gups = threads * ((double)updates) / (secs * 1.0e9);
-  printf("GUPS = %.10f\n", gups);
-
-  //hemem_print_stats();
-#endif
-#endif
 
 #if 0
   FILE* pebsfile = fopen("pebs.txt", "w+");
