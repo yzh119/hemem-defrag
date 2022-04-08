@@ -305,13 +305,14 @@ void make_cold(struct hemem_page* page)
   }
 }
 
+static struct hemem_page* start_dram_page = NULL;
+static struct hemem_page* start_nvm_page = NULL;
 
-struct hemem_page* partial_cool_peek_and_move(struct fifo_list *hot, struct fifo_list *cold, bool dram, struct hemem_page* current)
+#ifdef COOL_IN_PLACE
+struct hemem_page* partial_cool(struct fifo_list *hot, struct fifo_list *cold, bool dram, struct hemem_page* current)
 {
   struct hemem_page *p;
   uint64_t tmp_accesses[NPBUFTYPES];
-  static struct hemem_page* start_dram_page = NULL;
-  static struct hemem_page* start_nvm_page = NULL;
 
   if (dram && !need_cool_dram) {
       return current;
@@ -337,7 +338,7 @@ struct hemem_page* partial_cool_peek_and_move(struct fifo_list *hot, struct fifo
         assert(p->in_dram);
     }
     else {
-      assert(!p->in_dram);
+        assert(!p->in_dram);
     }
 
     for (int j = 0; j < NPBUFTYPES; j++) {
@@ -370,7 +371,68 @@ struct hemem_page* partial_cool_peek_and_move(struct fifo_list *hot, struct fifo
 
   return current;
 }
+#else
+static void partial_cool(struct fifo_list *hot, struct fifo_list *cold, bool dram)
+{
+  struct hemem_page *p;
+  uint64_t tmp_accesses[NPBUFTYPES];
 
+  if (dram && !need_cool_dram) {
+      return;
+  }
+  if (!dram && !need_cool_nvm) {
+      return;
+  }
+
+  if ((start_dram_page == NULL) && dram) {
+      start_dram_page = hot->last;
+  }
+
+  if ((start_nvm_page == NULL) && !dram) {
+      start_nvm_page = hot->last;
+  }
+
+  for (int i = 0; i < COOLING_PAGES; i++) {
+    p = dequeue_fifo(hot);
+    if (p == NULL) {
+        break;
+    }
+    if (dram) {
+        assert(p->in_dram);
+    }
+    else {
+        assert(!p->in_dram);
+    }
+
+    for (int j = 0; j < NPBUFTYPES; j++) {
+        tmp_accesses[j] = p->accesses[j] >> (global_clock - p->local_clock);
+    }
+
+    if ((tmp_accesses[WRITE] < HOT_WRITE_THRESHOLD) && (tmp_accesses[DRAMREAD] + tmp_accesses[NVMREAD] < HOT_READ_THRESHOLD)) {
+        p->hot = false;
+    }
+
+    if (dram && (p == start_dram_page)) {
+        start_dram_page = NULL;
+        need_cool_dram = false;
+    }
+
+    if (!dram && (p == start_nvm_page)) {
+        start_nvm_page = NULL;
+        need_cool_nvm = false;
+    } 
+
+    if (p->hot) {
+      enqueue_fifo(hot, p);
+    }
+    else {
+      enqueue_fifo(cold, p);
+    }
+  }
+}
+#endif
+
+#ifdef COOL_IN_PLACE
 void update_current_cool_page(struct hemem_page** cur_cool_in_dram, struct hemem_page** cur_cool_in_nvm, struct hemem_page* page)
 {
     if (page == NULL) {
@@ -386,6 +448,7 @@ void update_current_cool_page(struct hemem_page** cur_cool_in_dram, struct hemem
         *cur_cool_in_nvm = next_page(page->list, page);
     }
 }
+#endif
 
 void *pebs_policy_thread()
 {
@@ -399,8 +462,10 @@ void *pebs_policy_thread()
   uint64_t old_offset;
   int num_ring_reqs;
   struct hemem_page* page = NULL;
+  #ifdef COOL_IN_PLACE
   struct hemem_page* cur_cool_in_dram  = NULL;
   struct hemem_page* cur_cool_in_nvm = NULL;
+  #endif
 
   thread = pthread_self();
   CPU_ZERO(&cpuset);
@@ -422,7 +487,9 @@ void *pebs_policy_thread()
         
         list = page->list;
         assert(list != NULL);
+        #ifdef COOL_IN_PLACE
         update_current_cool_page(&cur_cool_in_dram, &cur_cool_in_nvm, page);
+        #endif
         page_list_remove_page(list, page);
         if (page->in_dram) {
             enqueue_fifo(&dram_free_list, page);
@@ -440,7 +507,9 @@ void *pebs_policy_thread()
             continue;
         }
         
+        #ifdef COOL_IN_PLACE
         update_current_cool_page(&cur_cool_in_dram, &cur_cool_in_nvm, page);
+        #endif
         page->ring_present = false;
         num_ring_reqs++;
         make_hot(page);
@@ -455,7 +524,9 @@ void *pebs_policy_thread()
             continue;
         }
 
+        #ifdef COOL_IN_PLACE
         update_current_cool_page(&cur_cool_in_dram, &cur_cool_in_nvm, page);
+        #endif
         page->ring_present = false;
         num_ring_reqs++;
         make_cold(page);
@@ -470,7 +541,9 @@ void *pebs_policy_thread()
         break;
       }
 
+      #ifdef COOL_IN_PLACE
       update_current_cool_page(&cur_cool_in_dram, &cur_cool_in_nvm, page);
+      #endif
       
       if ((p->accesses[WRITE] < HOT_WRITE_THRESHOLD) && (p->accesses[DRAMREAD] + p->accesses[NVMREAD] < HOT_READ_THRESHOLD)) {
         // it has been cooled, need to move it into the cold list
@@ -486,7 +559,9 @@ void *pebs_policy_thread()
         if (np != NULL) {
           assert(!(np->present));
 
+          #ifdef COOL_IN_PLACE
           update_current_cool_page(&cur_cool_in_dram, &cur_cool_in_nvm, np);
+          #endif
 
           LOG("%lx: cold %lu -> hot %lu\t slowmem.hot: %lu, slowmem.cold: %lu\t fastmem.hot: %lu, fastmem.cold: %lu\n",
                 p->va, p->devdax_offset, np->devdax_offset, nvm_hot_list.numentries, nvm_cold_list.numentries, dram_hot_list.numentries, dram_cold_list.numentries);
@@ -518,14 +593,18 @@ void *pebs_policy_thread()
         }
         assert(cp != NULL);
 
+        #ifdef COOL_IN_PLACE
         update_current_cool_page(&cur_cool_in_dram, &cur_cool_in_nvm, cp);
-         
+        #endif 
+
         // find a free nvm page to move the cold dram page to
         np = dequeue_fifo(&nvm_free_list);
         if (np != NULL) {
           assert(!(np->present));
 
+          #ifdef COOL_IN_PLACE 
           update_current_cool_page(&cur_cool_in_dram, &cur_cool_in_nvm, np);
+          #endif
 
           LOG("%lx: hot %lu -> cold %lu\t slowmem.hot: %lu, slowmem.cold: %lu\t fastmem.hot: %lu, fastmem.cold: %lu\n",
                 cp>va, cp->devdax_offset, np->devdax_offset, nvm_hot_list.numentries, nvm_cold_list.numentries, dram_hot_list.numentries, dram_cold_list.numentries);
@@ -548,8 +627,13 @@ void *pebs_policy_thread()
       }
     }
 
-    cur_cool_in_dram = partial_cool_peek_and_move(&dram_hot_list, &dram_cold_list, true, cur_cool_in_dram);
-    cur_cool_in_nvm = partial_cool_peek_and_move(&nvm_hot_list, &nvm_cold_list, false, cur_cool_in_nvm);
+    #ifdef COOL_IN_PLACE
+    cur_cool_in_dram = partial_cool(&dram_hot_list, &dram_cold_list, true, cur_cool_in_dram);
+    cur_cool_in_nvm = partial_cool(&nvm_hot_list, &nvm_cold_list, false, cur_cool_in_nvm);
+    #else
+    partial_cool(&dram_hot_list, &dram_cold_list, true);
+    partial_cool(&nvm_hot_list, &nvm_cold_list, false);
+    #endif
  
 out:
     LOG_TIME("migrate: %f s\n", elapsed(&start, &end));

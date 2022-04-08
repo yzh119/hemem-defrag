@@ -30,6 +30,9 @@
 #define SCANNING_THREAD_CPU (FAULT_THREAD_CPU + 1)
 #define MIGRATION_THREAD_CPU (SCANNING_THREAD_CPU + 1)
 
+
+//#define COOL_IN_PLACE
+
 struct perf_sample {
   struct perf_event_header header;
   __u64	ip;
