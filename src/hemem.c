@@ -228,11 +228,13 @@ void hemem_init()
   }
   assert(nvmfd >= 0);
 
+#ifdef ALLOC_LRU
   devmemfd = open("/dev/mem", O_RDWR | O_SYNC);
   if (devmemfd < 0) {
     perror("devmem open");
     assert(0);
   }
+#endif
 
   uffd = syscall(__NR_userfaultfd, O_CLOEXEC | O_NONBLOCK);
   if (uffd == -1) {

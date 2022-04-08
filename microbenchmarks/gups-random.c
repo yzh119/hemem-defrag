@@ -92,45 +92,37 @@ char *filename = "indices1.txt";
 
 FILE *hotsetfile = NULL;
 
-bool hotset_only = false;
-
 static void *do_gups(void *arguments)
 {
   //printf("do_gups entered\n");
   struct gups_args *args = (struct gups_args*)arguments;
   uint64_t *field = (uint64_t*)(args->field);
   uint64_t i;
-  uint64_t index1, index2;
+  uint64_t index;
   uint64_t elt_size = args->elt_size;
   char data[elt_size];
   uint64_t lfsr;
-  uint64_t hot_num;
-  uint64_t offset;
-  uint64_t start, end;
 
   srand(args->tid);
   lfsr = rand();
 
-  index1 = 0;
-  index2 = 0;
+  index = 0;
 
   fprintf(hotsetfile, "Thread %d region: %p - %p\thot set: %p - %p\n", args->tid, field, field + (args->size * elt_size), field + args->hot_start, field + args->hot_start + (args->hotsize * elt_size));   
 
   for (i = 0; i < args->iters; i++) {
     lfsr = lfsr_fast(lfsr);
-    index2 = lfsr % (args->size);
-    start = rdtscp();
+    index = lfsr % (args->size);
     if (elt_size == 8) {
-      uint64_t tmp = field[index2];
+      uint64_t tmp = field[index];
       tmp = tmp + i;
-      field[index2] = tmp;
+      field[index] = tmp;
     }
     else {
-      memcpy(data, &field[index2 * elt_size], elt_size);
+      memcpy(data, &field[index * elt_size], elt_size);
       memset(data, data[0] + i, elt_size);
-      memcpy(&field[index2 * elt_size], data, elt_size);
+      memcpy(&field[index * elt_size], data, elt_size);
     }
-    end = rdtscp();
   }
 
   return 0;
