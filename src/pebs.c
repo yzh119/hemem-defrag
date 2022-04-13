@@ -560,7 +560,7 @@ void *pebs_policy_thread()
           assert(!(np->present));
 
           #ifdef COOL_IN_PLACE
-          update_current_cool_page(&cur_cool_in_dram, &cur_cool_in_nvm, np);
+          //update_current_cool_page(&cur_cool_in_dram, &cur_cool_in_nvm, np);
           #endif
 
           LOG("%lx: cold %lu -> hot %lu\t slowmem.hot: %lu, slowmem.cold: %lu\t fastmem.hot: %lu, fastmem.cold: %lu\n",
@@ -594,7 +594,7 @@ void *pebs_policy_thread()
         assert(cp != NULL);
 
         #ifdef COOL_IN_PLACE
-        update_current_cool_page(&cur_cool_in_dram, &cur_cool_in_nvm, cp);
+        //update_current_cool_page(&cur_cool_in_dram, &cur_cool_in_nvm, cp);
         #endif 
 
         // find a free nvm page to move the cold dram page to
@@ -603,11 +603,11 @@ void *pebs_policy_thread()
           assert(!(np->present));
 
           #ifdef COOL_IN_PLACE 
-          update_current_cool_page(&cur_cool_in_dram, &cur_cool_in_nvm, np);
+          //update_current_cool_page(&cur_cool_in_dram, &cur_cool_in_nvm, np);
           #endif
 
           LOG("%lx: hot %lu -> cold %lu\t slowmem.hot: %lu, slowmem.cold: %lu\t fastmem.hot: %lu, fastmem.cold: %lu\n",
-                cp>va, cp->devdax_offset, np->devdax_offset, nvm_hot_list.numentries, nvm_cold_list.numentries, dram_hot_list.numentries, dram_cold_list.numentries);
+                cp->va, cp->devdax_offset, np->devdax_offset, nvm_hot_list.numentries, nvm_cold_list.numentries, dram_hot_list.numentries, dram_cold_list.numentries);
 
           old_offset = cp->devdax_offset;
           pebs_migrate_down(cp, np->devdax_offset);

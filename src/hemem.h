@@ -37,7 +37,6 @@ extern "C" {
 #include "fifo.h"
 
 //#define HEMEM_DEBUG
-//#define USE_PEBS
 #define STATS_THREAD
 
 #define USE_DMA
@@ -46,8 +45,8 @@ extern "C" {
 
 #define MEM_BARRIER() __sync_synchronize()
 
-#define NVMSIZE   (480L * (1024L * 1024L * 1024L))
-#define DRAMSIZE  (128L * (1024L * 1024L * 1024L))
+#define NVMSIZE   (248L * (1024L * 1024L * 1024L))
+#define DRAMSIZE  (29L * (1024L * 1024L * 1024L))
 
 #define DRAMPATH  "/dev/dax0.0"
 #define NVMPATH   "/dev/dax1.0"
@@ -75,8 +74,8 @@ extern "C" {
 
 extern FILE *hememlogf;
 //#define LOG(...) fprintf(stderr, __VA_ARGS__)
-//#define LOG(...)	fprintf(hememlogf, __VA_ARGS__)
-#define LOG(str, ...) while(0) {}
+#define LOG(...)	fprintf(hememlogf, __VA_ARGS__)
+//#define LOG(str, ...) while(0) {}
 
 extern FILE *timef;
 extern bool timing;

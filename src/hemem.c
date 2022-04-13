@@ -309,10 +309,6 @@ void hemem_init()
 
   paging_init();
 
-#ifdef USE_PEBS
-  pebs_init();
-#endif
-  
   is_init = true;
 
   struct hemem_page *dummy_page = calloc(1, sizeof(struct hemem_page));
@@ -521,10 +517,6 @@ int hemem_munmap(void* addr, size_t length)
 
 
   //fprintf(stderr, "munmap(%p, %lu)\n", addr, length);
-#ifdef USE_PEBS
-  //pebs_print();
-  //pebs_clear();
-#endif
 
   // for each page in region specified...
   for (page_boundry = (uint64_t)addr; page_boundry < (uint64_t)addr + length;) {
@@ -645,7 +637,7 @@ void hemem_migrate_up(struct hemem_page *page, uint64_t dram_offset)
   uffdio_dma_copy.mode = 0;
   uffdio_dma_copy.copy = 0;
   if (ioctl(uffd, UFFDIO_DMA_COPY, &uffdio_dma_copy) == -1) {
-    LOG("hemem_migrate_up, ioctl dma_copy fails for src:%lly, dst:%llu\n", old_addr, new_addr); 
+    LOG("hemem_migrate_up, ioctl dma_copy fails for src:%lx, dst:%lx\n", (uint64_t)old_addr, (uint64_t)new_addr); 
     assert(false);
   }
 #else
@@ -760,7 +752,7 @@ void hemem_migrate_down(struct hemem_page *page, uint64_t nvm_offset)
   uffdio_dma_copy.mode = 0;
   uffdio_dma_copy.copy = 0;
   if (ioctl(uffd, UFFDIO_DMA_COPY, &uffdio_dma_copy) == -1) {
-    LOG("hemem_migrate_down, ioctl dma_copy fails for src:%lly, dst:%llu\n", old_addr, new_addr); 
+    LOG("hemem_migrate_down, ioctl dma_copy fails for src:%lx, dst:%lx\n", (uint64_t)old_addr, (uint64_t)new_addr); 
     assert(false);
   }
 #else
