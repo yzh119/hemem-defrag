@@ -34,7 +34,6 @@ pthread_t fault_thread;
 
 int dramfd = -1;
 int nvmfd = -1;
-int devmemfd = -1;
 long uffd = -1;
 
 bool is_init = false;
@@ -72,7 +71,6 @@ pthread_mutex_t pages_lock = PTHREAD_MUTEX_INITIALIZER;
 
 void *dram_devdax_mmap;
 void *nvm_devdax_mmap;
-//void *devmem_mmap;
 
 __thread bool internal_call = false;
 __thread bool old_internal_call = false;
@@ -228,14 +226,6 @@ void hemem_init()
   }
   assert(nvmfd >= 0);
 
-#ifdef ALLOC_LRU
-  devmemfd = open("/dev/mem", O_RDWR | O_SYNC);
-  if (devmemfd < 0) {
-    perror("devmem open");
-    assert(0);
-  }
-#endif
-
   uffd = syscall(__NR_userfaultfd, O_CLOEXEC | O_NONBLOCK);
   if (uffd == -1) {
     perror("uffd");
@@ -281,12 +271,6 @@ void hemem_init()
     perror("nvm devdax mmap");
     assert(0);
   }
-
-  //devmem_mmap = libc_mmap(NULL, 6762176548864, PROT_READ | PROT_WRITE, MAP_SHARED | MAP_POPULATE, devmemfd, 0);
-  //if (devmem_mmap == MAP_FAILED) {
-    //perror("devmem mmap");
-    //assert(0);
-  //}
 
 #ifndef USE_DMA 
   uint64_t i;

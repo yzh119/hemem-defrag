@@ -31,7 +31,7 @@
 #define MIGRATION_THREAD_CPU (SCANNING_THREAD_CPU + 1)
 
 
-#define COOL_IN_PLACE
+//#define COOL_IN_PLACE
 
 struct perf_sample {
   struct perf_event_header header;

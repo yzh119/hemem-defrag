@@ -127,7 +127,6 @@ extern FILE *statsf;
 extern uint64_t cr3;
 extern int dramfd;
 extern int nvmfd;
-extern int devmemfd;
 extern bool is_init;
 extern uint64_t missing_faults_handled;
 extern uint64_t migrations_up;
@@ -136,7 +135,6 @@ extern __thread bool internal_malloc;
 extern __thread bool old_internal_call;
 extern __thread bool internal_call;
 extern __thread bool internal_munmap;
-extern void* devmem_mmap;
 
 enum memtypes {
   FASTMEM = 0,

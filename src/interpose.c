@@ -24,7 +24,7 @@ static int mmap_filter(void *addr, size_t length, int prot, int flags, int fd, o
 
   //TODO: figure out which mmap calls should go to libc vs hemem
   // non-anonymous mappings should probably go to libc (e.g., file mappings)
-  if (((flags & MAP_ANONYMOUS) != MAP_ANONYMOUS) && !((fd == dramfd) || (fd == nvmfd) || (fd == devmemfd))) {
+  if (((flags & MAP_ANONYMOUS) != MAP_ANONYMOUS) && !((fd == dramfd) || (fd == nvmfd))) {
     LOG("hemem interpose: calling libc mmap due to non-anonymous, non-devdax mapping: mmap(0x%lx, %ld, %x, %x, %d, %ld)\n", (uint64_t)addr, length, prot, flags, fd, offset);
     return 1;
   }
@@ -41,7 +41,7 @@ static int mmap_filter(void *addr, size_t length, int prot, int flags, int fd, o
     //return 1;
   //}
   
-  if ((fd == dramfd) || (fd == nvmfd) || (fd == devmemfd)) {
+  if ((fd == dramfd) || (fd == nvmfd)) {
     //LOG("hemem interpose: calling libc mmap due to hemem devdax mapping\n");
     return 1;
   }
