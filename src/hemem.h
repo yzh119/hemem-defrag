@@ -39,14 +39,14 @@ extern "C" {
 //#define HEMEM_DEBUG
 #define STATS_THREAD
 
-#define USE_DMA
+//#define USE_DMA
 #define NUM_CHANNS 2
 #define SIZE_PER_DMA_REQUEST (1024*1024)
 
 #define MEM_BARRIER() __sync_synchronize()
 
-#define NVMSIZE   (248L * (1024L * 1024L * 1024L))
-#define DRAMSIZE  (29L * (1024L * 1024L * 1024L))
+#define NVMSIZE   (6L * (1024L * 1024L * 1024L))
+#define DRAMSIZE  (6L * (1024L * 1024L * 1024L))
 
 #define DRAMPATH  "/dev/dax0.0"
 #define NVMPATH   "/dev/dax1.0"
@@ -74,7 +74,7 @@ extern "C" {
 
 extern FILE *hememlogf;
 //#define LOG(...) fprintf(stderr, __VA_ARGS__)
-#define LOG(...)	fprintf(hememlogf, __VA_ARGS__)
+#define LOG(...)	fprintf(hememlogf, __VA_ARGS__); fflush(hememlogf);
 //#define LOG(str, ...) while(0) {}
 
 extern FILE *timef;

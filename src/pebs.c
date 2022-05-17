@@ -720,6 +720,7 @@ void pebs_init(void)
   LOG("pebs_init: started\n");
 
   for (int i = 0; i < PEBS_NPROCS; i++) {
+    LOG("%d", i);
     //perf_page[i][READ] = perf_setup(0x1cd, 0x4, i);  // MEM_TRANS_RETIRED.LOAD_LATENCY_GT_4
     //perf_page[i][READ] = perf_setup(0x81d0, 0, i);   // MEM_INST_RETIRED.ALL_LOADS
     perf_page[i][DRAMREAD] = perf_setup(0x1d3, 0, i, DRAMREAD);      // MEM_LOAD_L3_MISS_RETIRED.LOCAL_DRAM
@@ -727,7 +728,7 @@ void pebs_init(void)
     perf_page[i][WRITE] = perf_setup(0x82d0, 0, i, WRITE);    // MEM_INST_RETIRED.ALL_STORES
     //perf_page[i][WRITE] = perf_setup(0x12d0, 0, i);   // MEM_INST_RETIRED.STLB_MISS_STORES
   }
-
+  
   pthread_mutex_init(&(dram_free_list.list_lock), NULL);
   for (int i = 0; i < DRAMSIZE / PAGE_SIZE; i++) {
     struct hemem_page *p = calloc(1, sizeof(struct hemem_page));
