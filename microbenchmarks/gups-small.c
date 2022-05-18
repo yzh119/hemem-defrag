@@ -43,7 +43,7 @@
 
 uint64_t size = 2 * 1024 * 1024;
 uint64_t elt_size = 8;
-uint64_t iters = 1000000000;
+uint64_t iters = 100000;
 
 int dramfd, nvmfd, uffd;
 void *dram_devdax_mmap, *nvm_devdax_mmap;
