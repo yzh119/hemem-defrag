@@ -42,9 +42,10 @@
 
 #define MAX_THREADS     64
 
-#define GUPS_PAGE_SIZE      (4 * 1024)
 #define PAGE_NUM            3
 #define PAGES               2048
+#define GUPS_PAGE_SIZE      (4 * 1024)
+#define HUGE_PAGE_SIZE (2L * 1024L * 1024)
 
 #ifdef HOTSPOT
 extern uint64_t hotset_start;
@@ -53,10 +54,9 @@ extern double hotset_fraction;
 
 int threads;
 
-bool move_hotset1 = false;
-
 uint64_t hot_start = 0;
 uint64_t hotsize = 0;
+bool move_hotset = false;
 
 struct gups_args {
   int tid;                      // thread id
@@ -67,6 +67,7 @@ struct gups_args {
   uint64_t elt_size;       // size of elements
   uint64_t hot_start;            // start of hot set
   uint64_t hotsize;        // size of hot set
+  uint64_t sparse_frac;
 };
 
 
@@ -78,60 +79,43 @@ static inline uint64_t rdtscp(void)
     return ((uint64_t)edx << 32) | eax;
 }
 
-uint64_t thread_gups[MAX_THREADS];
+//uint64_t thread_gups[MAX_THREADS];
 
 static unsigned long updates, nelems;
 
-bool stop = false;
 
-static void *timing_thread()
-{
-  uint64_t tic = -1;
-  bool printed1 = false;
-  for (;;) {
-    tic++;
-    if (tic >= 150 && tic < 300) {
-      if (!printed1) {
-        move_hotset1 = true;
-        fprintf(stderr, "moved hotset1\n");
-        printed1 = true;
-      }
-    }
-    if (tic >= 250) {
-      stop = true;
-    }
-    sleep(1);
-  }
-  return 0;
-}
-
-uint64_t tot_updates = 0;
-
+#if 0
 static void *print_instantaneous_gups()
 {
-  FILE *tot;
-  uint64_t tot_gups, tot_last_second_gups = 0;
+  uint64_t last_second_gups[threads];
+  FILE *f[threads];
+  char fname[20];
 
-
-  tot = fopen("tot_gups.txt", "w");
-  if (tot == NULL) {
-    perror("fopen");
+  for (int i = 0; i < threads; i++) {
+    last_second_gups[i] = 0;
+    snprintf(fname, 20, "gups_%d.txt", i);
+    //printf("file name: %s\n", fname);
+    f[i] = fopen(fname, "w");
+    if (f[i] == NULL) {
+      perror("fopen");
+      assert(0);
+    }
   }
 
   for (;;) {
-    tot_gups = 0;
     for (int i = 0; i < threads; i++) {
-      tot_gups += thread_gups[i];
+      //fprintf(f[i], "%.10f\n", (1.0 * (abs(thread_gups[i] - last_second_gups[i]))) / (1.0e9));
+      //last_second_gups[i] = thread_gups[i];
     }
-    fprintf(tot, "%.10f\n", (1.0 * (abs(tot_gups - tot_last_second_gups))) / (1.0e9));
-    tot_updates += abs(tot_gups - tot_last_second_gups);
-    tot_last_second_gups = tot_gups;
     sleep(1);
+    //printf("GUPS: %.10f\n", (1.0 * (abs(thread_gups[0]- last_second_gups))) / (1.0e9));
+    //last_second_gups = thread_gups[0];
+    //sleep(1);
   }
 
   return NULL;
 }
-
+#endif
 
 static uint64_t lfsr_fast(uint64_t lfsr)
 {
@@ -145,6 +129,36 @@ char *filename = "indices1.txt";
 
 FILE *hotsetfile = NULL;
 
+bool hotset_only = false;
+
+static void *prefill_hotset(void* arguments)
+{
+  struct gups_args *args = (struct gups_args*)arguments;
+  uint64_t *field = (uint64_t*)(args->field);
+  uint64_t i;
+  uint64_t index1;
+  uint64_t elt_size = args->elt_size;
+  char data[elt_size];
+
+  index1 = 0;
+
+  for (i = 0; i < args->hotsize; i++) {
+    index1 = i;
+    if (elt_size == 8) {
+      uint64_t  tmp = field[index1];
+      tmp = tmp + i;
+      field[index1] = tmp;
+    }
+    else {
+      memcpy(data, &field[index1 * elt_size], elt_size);
+      memset(data, data[0] + i, elt_size);
+      memcpy(&field[index1 * elt_size], data, elt_size);
+    }
+  }
+  return 0;
+  
+}
+
 static void *do_gups(void *arguments)
 {
   //printf("do_gups entered\n");
@@ -156,7 +170,7 @@ static void *do_gups(void *arguments)
   char data[elt_size];
   uint64_t lfsr;
   uint64_t hot_num;
-  uint64_t before_accesses = 0;
+  uint64_t sparse_frac = args->sparse_frac;
 
   srand(args->tid);
   lfsr = rand();
@@ -170,17 +184,10 @@ static void *do_gups(void *arguments)
     hot_num = lfsr_fast(lfsr) % 100;
     if (hot_num < 90) {
       lfsr = lfsr_fast(lfsr);
-      index1 = args->hot_start + (lfsr % args->hotsize);
-      if (move_hotset1) {
-        if ((index1 < (args->hotsize / 4))) {
-          index1 += args->hotsize;
-        }
-      }
-      else {
-        if ((index1 < (args->hotsize / 4))) {
-          before_accesses++;
-        }
-      }
+      uint64_t location = (lfsr % args->hotsize);
+      uint64_t page = location / (GUPS_PAGE_SIZE / elt_size);
+      uint64_t offset = location % (GUPS_PAGE_SIZE / elt_size);
+      index1 = args->hot_start + page * sparse_frac * (GUPS_PAGE_SIZE / elt_size) + offset;
       if (elt_size == 8) {
         uint64_t  tmp = field[index1];
         tmp = tmp + i;
@@ -206,19 +213,8 @@ static void *do_gups(void *arguments)
         memcpy(&field[index2 * elt_size], data, elt_size);
       }
     }
-
-    if (i % 10000 == 0) {
-      thread_gups[args->tid] += 10000;
-    }
-
-    if (stop) {
-      break;
-    }
   }
 
-  fprintf(stderr, "before_accesses: %lu\n", before_accesses);
-
-  //fclose(timefile);
   return 0;
 }
 
@@ -227,6 +223,7 @@ int main(int argc, char **argv)
   unsigned long expt;
   unsigned long size, elt_size;
   unsigned long tot_hot_size;
+  unsigned long sparse_frac;
   int log_hot_size;
   struct timeval starttime, stoptime;
   double secs, gups;
@@ -235,13 +232,14 @@ int main(int argc, char **argv)
   struct gups_args** ga;
   pthread_t t[MAX_THREADS];
 
-  if (argc != 6) {
+  if (argc != 7) {
     fprintf(stderr, "Usage: %s [threads] [updates per thread] [exponent] [data size (bytes)] [noremap/remap]\n", argv[0]);
     fprintf(stderr, "  threads\t\t\tnumber of threads to launch\n");
     fprintf(stderr, "  updates per thread\t\tnumber of updates per thread\n");
     fprintf(stderr, "  exponent\t\t\tlog size of region\n");
     fprintf(stderr, "  data size\t\t\tsize of data in array (in bytes)\n");
     fprintf(stderr, "  hot size\t\t\tlog size of hot set\n");
+    fprintf(stderr, "  sparse fraction\t\t\tDistribution of sparse hot data. Argument should be X, indicating every X pages is hot.\n");
     return 0;
   }
 
@@ -261,7 +259,8 @@ int main(int argc, char **argv)
   assert(size > 0 && (size % 256 == 0));
   elt_size = atoi(argv[4]);
   log_hot_size = atof(argv[5]);
-  tot_hot_size = (unsigned long)(1) << log_hot_size;
+  sparse_frac = atoi(argv[6]);
+  tot_hot_size = ((unsigned long)(1) << log_hot_size) * sparse_frac;
 
   fprintf(stderr, "%lu updates per thread (%d threads)\n", updates, threads);
   fprintf(stderr, "field of 2^%lu (%lu) bytes\n", expt, size);
@@ -280,7 +279,7 @@ int main(int argc, char **argv)
   nelems = (size / threads) / elt_size; // number of elements per thread
   fprintf(stderr, "Elements per thread: %lu\n", nelems);
 
-  memset(thread_gups, 0, sizeof(thread_gups));
+  //memset(thread_gups, 0, sizeof(thread_gups));
 
   hotsetfile = fopen("hotsets.txt", "w");
   if (hotsetfile == NULL) {
@@ -294,8 +293,13 @@ int main(int argc, char **argv)
 
   //hemem_start_timing();
 
+  //pthread_t print_thread;
+  //int pt = pthread_create(&print_thread, NULL, print_instantaneous_gups, NULL);
+  //assert(pt == 0);
+
+
   hot_start = 0;
-  hotsize = (tot_hot_size / threads) / elt_size;
+  hotsize = ((tot_hot_size / threads) / elt_size) / sparse_frac;
   //printf("hot_start: %p\thot_end: %p\thot_size: %lu\n", p + hot_start, p + hot_start + (hotsize * elt_size), hotsize);
 
   gettimeofday(&starttime, NULL);
@@ -309,6 +313,19 @@ int main(int argc, char **argv)
     ga[i]->elt_size = elt_size;
     ga[i]->hot_start = 0;        // hot set at start of thread's region
     ga[i]->hotsize = hotsize;
+    ga[i]->sparse_frac = sparse_frac;
+  }
+
+  if (hotset_only) {
+    for (i = 0; i < threads; i++) {
+      int r = pthread_create(&t[i], NULL, prefill_hotset, (void*)ga[i]);
+      assert(r == 0);
+    }
+    // wait for worker threads
+    for (i = 0; i < threads; i++) {
+      int r = pthread_join(t[i], NULL);
+      assert(r == 0);
+    }
   }
 
   // run through gups once to touch all memory
@@ -328,21 +345,12 @@ int main(int argc, char **argv)
   gettimeofday(&stoptime, NULL);
 
   secs = elapsed(&starttime, &stoptime);
-  //printf("Elapsed time: %.4f seconds.\n", secs);
+  printf("Elapsed time: %.4f seconds.\n", secs);
   gups = threads * ((double)updates) / (secs * 1.0e9);
-  //printf("GUPS = %.10f\n", gups);
-  memset(thread_gups, 0, sizeof(thread_gups));
+  printf("GUPS = %.10f\n", gups);
+  //memset(thread_gups, 0, sizeof(thread_gups));
 
   filename = "indices2.txt";
-
-  pthread_t print_thread;
-  int pt = pthread_create(&print_thread, NULL, print_instantaneous_gups, NULL);
-  assert(pt == 0);
-
-
-  pthread_t timer_thread;
-  int tt = pthread_create(&timer_thread, NULL, timing_thread, NULL);
-  assert (tt == 0);
 
   fprintf(stderr, "Timing.\n");
   gettimeofday(&starttime, NULL);
@@ -350,7 +358,6 @@ int main(int argc, char **argv)
   //hemem_clear_stats();
   // spawn gups worker threads
   for (i = 0; i < threads; i++) {
-    ga[i]->iters = updates * 2;
     int r = pthread_create(&t[i], NULL, do_gups, (void*)ga[i]);
     assert(r == 0);
   }
@@ -366,42 +373,22 @@ int main(int argc, char **argv)
 
   secs = elapsed(&starttime, &stoptime);
   printf("Elapsed time: %.4f seconds.\n", secs);
-  gups = ((double)tot_updates) / (secs * 1.0e9);
-  printf("GUPS = %.10f\n", gups);
-
-  memset(thread_gups, 0, sizeof(thread_gups));
-
-#if 0
-#ifdef HOTSPOT
-  filename = "indices3.txt";
-  move_hotset = true;
-
-  printf("Timing.\n");
-  gettimeofday(&starttime, NULL);
-
-  // spawn gups worker threads
-  for (i = 0; i < threads; i++) {
-    int r = pthread_create(&t[i], NULL, do_gups, (void*)ga[i]);
-    assert(r == 0);
-  }
-
-  // wait for worker threads
-  for (i = 0; i < threads; i++) {
-    int r = pthread_join(t[i], NULL);
-    assert(r == 0);
-  }
-
-  gettimeofday(&stoptime, NULL);
-
-  secs = elapsed(&starttime, &stoptime);
-  printf("Elapsed time: %.4f seconds.\n", secs);
   gups = threads * ((double)updates) / (secs * 1.0e9);
   printf("GUPS = %.10f\n", gups);
 
-  //hemem_print_stats();
-#endif
-#endif
+  //memset(thread_gups, 0, sizeof(thread_gups));
 
+#if 0
+  FILE* pebsfile = fopen("pebs.txt", "w+");
+  assert(pebsfile != NULL);
+  for (uint64_t addr = (uint64_t)p; addr < (uint64_t)p + size; addr += (2*1024*1024)) {
+    struct hemem_page *pg = get_hemem_page(addr);
+    assert(pg != NULL);
+    if (pg != NULL) {
+      fprintf(pebsfile, "0x%lx:\t%lu\t%lu\t%lu\n", pg->va, pg->tot_accesses[DRAMREAD], pg->tot_accesses[NVMREAD], pg->tot_accesses[WRITE]);
+    }
+  }
+#endif
   //hemem_stop_timing();
 
   for (i = 0; i < threads; i++) {
@@ -416,4 +403,5 @@ int main(int argc, char **argv)
 
   return 0;
 }
+
 

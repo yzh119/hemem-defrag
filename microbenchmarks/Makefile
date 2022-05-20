@@ -6,9 +6,9 @@ CFLAGS = -g -Wall -O3
 INCLUDES = -I../linux/usr/include
 LIBS = -lm -lpthread
 
-default: gups-pebs gups-random gups-hotset-move
+default: gups-pebs gups-random gups-hotset-move gups-pebs-sparse
 
-all: gups-pebs gups-random gups-simple gups-lru gups-lru-swap gups-hotset-move #gups
+all: gups-pebs gups-random gups-simple gups-lru gups-lru-swap gups-hotset-move gups-pebs-sparse#gups
 
 gups-random: gups-random.o
 	$(CC) $(CFLAGS) $(INCLUDES) -o gups-random gups-random.o zipf.o ../src/timer.o $(LIBS) # -L$(HEMEMDIR) -lhemem
@@ -21,6 +21,9 @@ gups: gups.o
 
 gups-pebs: gups.o
 	$(CC) $(CFLAGS) $(INCLUDES) -o gups-pebs gups.o zipf.o $(LIBS) -L$(HEMEMDIR) -lhemem
+
+gups-pebs-sparse: gups-sparse.o
+	$(CC) $(CFLAGS) $(INCLUDES) -o gups-pebs-sparse gups-sparse.o zipf.o $(LIBS) -L$(HEMEMDIR) -lhemem
 
 gups-hotset-move: gups-hotset-move.o
 	$(CC) $(CFLAGS) $(INCLUDES) -o gups-hotset-move gups-hotset-move.o zipf.o $(LIBS) -L$(HEMEMDIR) -lhemem
@@ -39,6 +42,9 @@ gups-random.o: gups-random.c zipf.c gups.h
 
 gups.o: gups.c zipf.c  gups.h
 	$(CC) $(CFLAGS) $(INCLUDES) -c gups.c zipf.c
+
+gups-sparse.o: gups-sparse.c zipf.c  gups.h
+	$(CC) $(CFLAGS) $(INCLUDES) -c gups-sparse.c zipf.c
 
 gups-hotset-move.o: gups-hotset-move.c zipf.c gups.h
 	$(CC) $(CFLAGS) $(INCLUDES) -c gups-hotset-move.c zipf.c
