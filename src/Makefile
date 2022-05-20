@@ -13,10 +13,10 @@ all: hemem-libs
 hemem-libs: libhemem-lru.so libhemem-simple.so libhemem-lru-swap.so libhemem.so
 
 libhemem.so: hemem.o pebs.o timer.o interpose.o fifo.o spsc-ring.o
-	$(CC) $(LDFLAGS) -o $@ hemem.o timer.o interpose.o pebs.o fifo.o spsc-ring.o $(HEMEM_LIBS)
+	$(CC) $(LDFLAGS) -o $@ $^ $(HEMEM_LIBS)  -D PAGE_SIZE=2097152UL
 
 libhemem-base.so: hemem-base.o pebs-base.o timer.o interpose.o fifo.o spsc-ring.o
-	$(CC) $(LDFLAGS) -o $@ hemem.o timer.o interpose.o pebs.o fifo.o spsc-ring.o $(HEMEM_LIBS)
+	$(CC) $(LDFLAGS) -o $@ $^ $(HEMEM_LIBS)  -D PAGE_SIZE=4096UL
 
 libhemem-lru.so: policies/hemem-lru.o policies/lru.o timer.o interpose.o policies/paging.o fifo.o spsc-ring.o
 	$(CC) $(LDFLAGS) -o libhemem-lru.so policies/hemem-lru.o timer.o policies/lru.o interpose.o policies/paging.o fifo.o spsc-ring.o $(HEMEM_LIBS)

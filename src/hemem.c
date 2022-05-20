@@ -165,15 +165,12 @@ static void *hemem_stats_thread()
 
 void add_page(struct hemem_page *page)
 {
-  LOG("ADDING PAGE\n");
   struct hemem_page *p;
   pthread_mutex_lock(&pages_lock);
-  LOG("ACQ LOCK PAGE\n");
   HASH_FIND(hh, pages, &(page->va), sizeof(uint64_t), p);
   assert(p == NULL);
   HASH_ADD(hh, pages, va, sizeof(uint64_t), page);
   pthread_mutex_unlock(&pages_lock);
-  LOG("REL LOCK PAGE\n");
 }
 
 void remove_page(struct hemem_page *page)
