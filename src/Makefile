@@ -6,14 +6,17 @@ INCLUDES = -I../linux/usr/include/
 LIBS = -lm -lpthread
 HEMEM_LIBS = $(LIBS) -ldl -lsyscall_intercept -L../Hoard/src -lhoard
 
-default: libhemem.so
+default: libhemem.so libhemem-base.so
 
 all: hemem-libs
 
 hemem-libs: libhemem-lru.so libhemem-simple.so libhemem-lru-swap.so libhemem.so
 
 libhemem.so: hemem.o pebs.o timer.o interpose.o fifo.o spsc-ring.o
-	$(CC) $(LDFLAGS) -o libhemem.so hemem.o timer.o interpose.o pebs.o fifo.o spsc-ring.o $(HEMEM_LIBS)
+	$(CC) $(LDFLAGS) -o $@ hemem.o timer.o interpose.o pebs.o fifo.o spsc-ring.o $(HEMEM_LIBS)
+
+libhemem-base.so: hemem-base.o pebs-base.o timer.o interpose.o fifo.o spsc-ring.o
+	$(CC) $(LDFLAGS) -o $@ hemem.o timer.o interpose.o pebs.o fifo.o spsc-ring.o $(HEMEM_LIBS)
 
 libhemem-lru.so: policies/hemem-lru.o policies/lru.o timer.o interpose.o policies/paging.o fifo.o spsc-ring.o
 	$(CC) $(LDFLAGS) -o libhemem-lru.so policies/hemem-lru.o timer.o policies/lru.o interpose.o policies/paging.o fifo.o spsc-ring.o $(HEMEM_LIBS)
@@ -25,7 +28,10 @@ libhemem-lru-swap.so: policies/hemem-lru-swap.o policies/lru_swap.o timer.o inte
 	$(CC) $(LDFLAGS) -o libhemem-lru-swap.so policies/hemem-lru-swap.o timer.o policies/lru_swap.o interpose.o policies/paging.o fifo.o spsc-ring.o $(HEMEM_LIBS)
 
 hemem.o: hemem.c hemem.h pebs.h interpose.h fifo.h spsc-ring.h
-	$(CC) $(CFLAGS) $(INCLUDES) -D ALLOC_HEMEM -c hemem.c -o hemem.o
+	$(CC) $(CFLAGS) $(INCLUDES) -D ALLOC_HEMEM -D PAGE_SIZE=2097152UL -c hemem.c -o $@
+
+hemem-base.o: hemem.c hemem.h pebs.h interpose.h fifo.h spsc-ring.h
+	$(CC) $(CFLAGS) $(INCLUDES) -D ALLOC_HEMEM -D PAGE_SIZE=4096UL -c hemem.c -o $@
 	
 policies/hemem-lru.o: hemem.c hemem.h policies/lru.h interpose.h policies/paging.h fifo.h spsc-ring.h
 	$(CC) $(CFLAGS) $(INCLUDES) -D ALLOC_LRU -c hemem.c -o policies/hemem-lru.o
@@ -55,7 +61,10 @@ policies/paging.o: policies/paging.c policies/paging.h
 	$(CC) $(CFLAGS) $(INCLUDES) -c policies/paging.c -o policies/paging.o
 
 pebs.o: pebs.c pebs.h hemem.h fifo.h
-	$(CC) $(CFLAGS) $(INCLUDES) -c pebs.c
+	$(CC) $(CFLAGS) $(INCLUDES)  -D PAGE_SIZE=2097152UL -c pebs.c
+
+pebs-base.o: pebs.c pebs.h hemem.h fifo.h
+	$(CC) $(CFLAGS) $(INCLUDES)  -D PAGE_SIZE=4096UL -c pebs.c -o $@
 
 fifo.o: fifo.c fifo.h hemem.h
 	$(CC) $(CFLAGS) $(INCLUDES) -c fifo.c

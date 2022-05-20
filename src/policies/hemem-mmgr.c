@@ -118,20 +118,20 @@ static void move_hot(void)
   memset(transition, 0, NPAGETYPES * sizeof(struct mmgr_list));
 
   // identify pages for movement and mark read-only until out of fastmem
-  while (transition_bytes + pt_to_pagesize(HUGEP) < fastmem_freebytes) {
-    n = mmgr_list_remove(&mem_active[SLOWMEM][HUGEP]);
+  while (transition_bytes + pt_to_pagesize(PAGE_TYPE) < fastmem_freebytes) {
+    n = mmgr_list_remove(&mem_active[SLOWMEM][PAGE_TYPE]);
 
     if (n == NULL) {
       // no more active pages
       break;
     }
 
-    mmgr_list_add(&transition[HUGEP], n);
+    mmgr_list_add(&transition[PAGE_TYPE], n);
     pthread_mutex_lock(&(n->page->page_lock));
     n->page->migrating = true;
     hemem_wp_page(n->page, true);
 
-    transition_bytes += pt_to_pagesize(HUGEP);
+    transition_bytes += pt_to_pagesize(PAGE_TYPE);
   }
 
   if (transition_bytes == 0) {
@@ -141,11 +141,11 @@ static void move_hot(void)
 
   hemem_tlb_shootdown(0);
 
-  while ((n = mmgr_list_remove(&transition[HUGEP])) != NULL) {
+  while ((n = mmgr_list_remove(&transition[PAGE_TYPE])) != NULL) {
     struct mmgr_node *nn;
 
 //again:
-    nn = mmgr_list_remove(&mem_free[FASTMEM][HUGEP]);
+    nn = mmgr_list_remove(&mem_free[FASTMEM][PAGE_TYPE]);
 
   /*if (nn == NULL) {
       // break up a huge page
@@ -167,16 +167,16 @@ static void move_hot(void)
   */
 
     // TODO: move memory
-    fastmem_freebytes -= pt_to_pagesize(HUGEP);
-    slowmem_freebytes += pt_to_pagesize(HUGEP);
+    fastmem_freebytes -= pt_to_pagesize(PAGE_TYPE);
+    slowmem_freebytes += pt_to_pagesize(PAGE_TYPE);
 
     hemem_migrate_up(n->page, nn->offset);
 
     // add migrated node to active list
-    mmgr_list_add(&mem_active[FASTMEM][HUGEP], nn);
+    mmgr_list_add(&mem_active[FASTMEM][PAGE_TYPE], nn);
 
     // old node is now free
-    mmgr_list_add(&mem_free[SLOWMEM][HUGEP], n);
+    mmgr_list_add(&mem_free[SLOWMEM][PAGE_TYPE], n);
 
     // swap page structures on nodes
     struct hemem_page *tmp;
@@ -207,7 +207,7 @@ static void move_cold(void)
   memset(transition, 0, NPAGETYPES * sizeof(struct mmgr_list));
 
   //for (enum pagetypes pt = HUGEP; pt < NPAGETYPES; pt++) {
-    enum pagetypes pt = HUGEP;
+    enum pagetypes pt = PAGE_TYPE;
     struct mmgr_node *n;
 
     while ((n = mmgr_list_remove(&mem_inactive[FASTMEM][pt])) != NULL) {
@@ -231,7 +231,7 @@ move:
       LOG("COLD emergency cooling -- picking a random page\n");
       // if low on memory and all is hot, pick a random page to move down
       //for (enum pagetypes pt = HUGEP; pt < NPAGETYPES; pt++) {
-        enum pagetypes pt = HUGEP;
+        enum pagetypes pt = PAGE_TYPE;
         struct mmgr_node *n;
         while ((n = mmgr_list_remove(&mem_active[FASTMEM][pt])) != NULL) {
           mmgr_list_add(&transition[pt], n);
@@ -259,7 +259,7 @@ move:
 
   // move cold pages down (and split them into base pages
   //for (enum pagetypes pt = HUGEP; pt < NPAGETYPES; pt++) {
-    pt = HUGEP;
+    pt = PAGE_TYPE;
 
     while((n = mmgr_list_remove(&transition[pt])) != NULL) {
       //size_t times = 1;
@@ -271,21 +271,21 @@ move:
       }
       */
       //for (size_t i = 0; i < times; i++) {
-        struct mmgr_node *nn = mmgr_list_remove(&mem_free[SLOWMEM][HUGEP]);
+        struct mmgr_node *nn = mmgr_list_remove(&mem_free[SLOWMEM][PAGE_TYPE]);
         assert(nn != NULL);
         assert(!nn->page->present);
 
         // TODO: move memory
-        slowmem_freebytes -= pt_to_pagesize(HUGEP);
-        fastmem_freebytes += pt_to_pagesize(HUGEP);
+        slowmem_freebytes -= pt_to_pagesize(PAGE_TYPE);
+        fastmem_freebytes += pt_to_pagesize(PAGE_TYPE);
 
         hemem_migrate_down(n->page, nn->offset);
 
         // add migrated node to inactive list
-        mmgr_list_add(&mem_inactive[SLOWMEM][HUGEP], nn);
+        mmgr_list_add(&mem_inactive[SLOWMEM][PAGE_TYPE], nn);
 
         // old node is now free
-        mmgr_list_add(&mem_free[FASTMEM][HUGEP], n);
+        mmgr_list_add(&mem_free[FASTMEM][PAGE_TYPE], n);
 
         // swap page structures on nodes
         struct hemem_page *tmp;
@@ -325,7 +325,7 @@ static void cool(void)
     for (enum memtypes mt = FASTMEM; mt < NMEMTYPES; mt++) {
       // spread evenly over all page size types;
       //for (enum pagetypes pt = HUGEP; pt < NPAGETYPES; pt++) {
-        enum pagetypes pt = HUGEP;
+        enum pagetypes pt = PAGE_TYPE;
         struct mmgr_node *n = mmgr_list_peek(&mem_active[mt][pt]);
 
         if (n == NULL || bookmark[mt][pt] == n) {
@@ -374,7 +374,7 @@ static void thaw(void)
     for (enum memtypes mt = FASTMEM; mt < NMEMTYPES; mt++) {
       // spread evenly over all page size types
       //for (enum pagetypes pt = HUGEP; pt < NPAGETYPES; pt++) {
-        enum pagetypes pt = HUGEP;
+        enum pagetypes pt = PAGE_TYPE;
         bool recirculated = false;
         struct mmgr_node *n = mmgr_list_peek(&mem_inactive[mt][pt]);
 
@@ -470,12 +470,12 @@ static struct hemem_page* mmgr_allocate_page()
   gettimeofday(&start, NULL);
 
   //for (pagetypes pt = HUGEP; pt < NPAGETYPES; pt++) {
-    enum pagetypes pt = HUGEP;
+    enum pagetypes pt = PAGE_TYPE;
     node = mmgr_list_remove(&mem_free[FASTMEM][pt]);
     if (node != NULL) {
       assert(node->page->in_dram);
       assert(!node->page->present);
-      assert(node->page->pt == HUGEP);
+      assert(node->page->pt == PAGE_TYPE);
       
       node->page->present = true;
       mmgr_list_add(&mem_active[FASTMEM][pt], node);
@@ -490,13 +490,13 @@ static struct hemem_page* mmgr_allocate_page()
   //}
 
   if (node == NULL) {
-    pt = HUGEP;
+    pt = PAGE_TYPE;
     node = mmgr_list_remove(&mem_free[SLOWMEM][pt]);
 
     assert(node != NULL);
     assert(!node->page->in_dram);
     assert(!node->page->present);
-    assert(node->page->pt == HUGEP);
+    assert(node->page->pt == PAGE_TYPE);
 
     node->page->present = true;
     mmgr_list_add(&mem_active[SLOWMEM][pt], node);
@@ -567,36 +567,36 @@ void hemem_mmgr_init(void)
     pthread_mutex_init(&(mem_free[FASTMEM][i].list_lock), NULL);
     pthread_mutex_init(&(mem_free[SLOWMEM][i].list_lock), NULL);
   }
-  for (uint64_t i = 0; i < FASTMEM_HUGE_PAGES; i++) {
+  for (uint64_t i = 0; i < FASTMEM_PAGES; i++) {
     struct mmgr_node *n = calloc(1, sizeof(struct mmgr_node));
-    n->offset = i * HUGEPAGE_SIZE;
+    n->offset = i * PAGE_SIZE;
 
     struct hemem_page *p = calloc(1, sizeof(struct hemem_page));
-    p->devdax_offset = i * HUGEPAGE_SIZE;
+    p->devdax_offset = i * PAGE_SIZE;
     p->present = false;
     p->in_dram = true;
-    p->pt = pagesize_to_pt(HUGEPAGE_SIZE);
+    p->pt = pagesize_to_pt(PAGE_SIZE);
     pthread_mutex_init(&(p->page_lock), NULL);
 
     n->page = p;
     p->management = n;
-    mmgr_list_add(&mem_free[FASTMEM][HUGEP], n);
+    mmgr_list_add(&mem_free[FASTMEM][pagesize_to_pt(PAGE_SIZE)], n);
   }
 
-  for (uint64_t i = 0; i < SLOWMEM_HUGE_PAGES; i++) {
+  for (uint64_t i = 0; i < SLOWMEM_PAGES; i++) {
     struct mmgr_node *n = calloc(1, sizeof(struct mmgr_node));
-    n->offset = i * HUGEPAGE_SIZE;
+    n->offset = i * PAGE_SIZE;
 
     struct hemem_page *p = calloc(1, sizeof(struct hemem_page));
-    p->devdax_offset = i * HUGEPAGE_SIZE;
+    p->devdax_offset = i * PAGE_SIZE;
     p->present = false;
     p->in_dram = false;
-    p->pt = pagesize_to_pt(HUGEPAGE_SIZE);
+    p->pt = pagesize_to_pt(PAGE_SIZE);
     pthread_mutex_init(&(p->page_lock), NULL);
 
     n->page = p;
     p->management = n;
-    mmgr_list_add(&mem_free[SLOWMEM][HUGEP], n);
+    mmgr_list_add(&mem_free[SLOWMEM][PAGE_TYPE], n);
   }
 
   int r = pthread_create(&thread, NULL, mmgr_thread, NULL);

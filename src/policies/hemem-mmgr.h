@@ -20,6 +20,9 @@
 #define SLOWMEM_HUGE_PAGES  ((NVMSIZE) / (HUGEPAGE_SIZE))
 #define SLOWMEM_BASE_PAGES  ((NVMSIZE) / (BASEPAGE_SIZE))
 
+#define FASTMEM_PAGES  ((DRAMSIZE) / (PAGE_SIZE))
+#define SLOWMEM_PAGES  ((NVMSIZE) / (PAGE_SIZE))
+
 struct mmgr_node {
   struct hemem_page *page;
   uint64_t accesses, tot_accesses;

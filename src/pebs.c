@@ -142,7 +142,7 @@ void *pebs_scan_thread()
             ps = (struct perf_sample*)ph;
             assert(ps != NULL);
             if(ps->addr != 0) {
-              __u64 pfn = ps->addr & HUGE_PFN_MASK;
+              __u64 pfn = ps->addr & PFN_MASK;
             
               page = get_hemem_page(pfn);
               if (page != NULL) {

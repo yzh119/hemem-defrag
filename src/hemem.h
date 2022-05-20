@@ -45,8 +45,8 @@ extern "C" {
 
 #define MEM_BARRIER() __sync_synchronize()
 
-#define NVMSIZE   (6L * (1024L * 1024L * 1024L))
-#define DRAMSIZE  (6L * (1024L * 1024L * 1024L))
+#define NVMSIZE   (7L * (1024L * 1024L * 1024L) + 512L * 1024L * 1024L)
+#define DRAMSIZE  (1L * (1024L * 1024L * 1024L))
 
 #define DRAMPATH  "/dev/dax0.0"
 #define NVMPATH   "/dev/dax1.0"
@@ -56,7 +56,9 @@ extern "C" {
 #define BASEPAGE_SIZE	  (4UL * 1024UL)
 #define HUGEPAGE_SIZE 	(2UL * 1024UL * 1024UL)
 #define GIGAPAGE_SIZE   (1024UL * 1024UL * 1024UL)
-#define PAGE_SIZE 	    HUGEPAGE_SIZE
+//#ifndef PAGE_SIZE
+//#define PAGE_SIZE 	    HUGEPAGE_SIZE
+//#endif
 
 #define FASTMEM_PAGES   ((DRAMSIZE) / (PAGE_SIZE))
 #define SLOWMEM_PAGES   ((NVMSIZE) / (PAGE_SIZE))
@@ -68,6 +70,12 @@ extern "C" {
 #define BASE_PFN_MASK	(BASEPAGE_MASK ^ UINT64_MAX)
 #define HUGE_PFN_MASK	(HUGEPAGE_MASK ^ UINT64_MAX)
 #define GIGA_PFN_MASK   (GIGAPAGE_MASK ^ UINT64_MAX)
+
+#if PAGE_SIZE == HUGEPAGE_SIZE
+#define PFN_MASK HUGE_PFN_MASK
+#elif PAGE_SIZE == BASEPAGE_SIZE
+#define PFN_MASK BASE_PFN_MASK
+#endif
 
 #define FAULT_THREAD_CPU  (0)
 #define STATS_THREAD_CPU  (23)
@@ -147,6 +155,12 @@ enum pagetypes {
   BASEP = 1,
   NPAGETYPES
 };
+
+#if PAGE_SIZE == HUGEPAGE_SIZE
+#define PAGE_TYPE HUGEP
+#elif PAGE_SIZE == BASEPAGE_SIZE
+#define PAGE_TYPE BASEP
+#endif
 
 struct hemem_page {
   uint64_t va;
