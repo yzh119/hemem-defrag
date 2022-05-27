@@ -129,32 +129,40 @@ char *filename = "indices1.txt";
 
 FILE *hotsetfile = NULL;
 
-bool hotset_only = false;
+bool hotset_only = true;
 
 static void *prefill_hotset(void* arguments)
 {
   struct gups_args *args = (struct gups_args*)arguments;
   uint64_t *field = (uint64_t*)(args->field);
-  uint64_t i;
+  uint64_t location;
   uint64_t index1;
   uint64_t elt_size = args->elt_size;
   char data[elt_size];
+  uint64_t sparse_frac = args->sparse_frac;
 
   index1 = 0;
 
-  for (i = 0; i < args->hotsize; i++) {
-    index1 = i;
-    if (elt_size == 8) {
-      uint64_t  tmp = field[index1];
-      tmp = tmp + i;
-      field[index1] = tmp;
-    }
-    else {
-      memcpy(data, &field[index1 * elt_size], elt_size);
-      memset(data, data[0] + i, elt_size);
-      memcpy(&field[index1 * elt_size], data, elt_size);
-    }
+  for(int iters = 0; iters < 1000; ++iters) {
+	  for (location = 0; location < args->hotsize; location++) {
+		  uint64_t page = location / (GUPS_PAGE_SIZE / elt_size);
+		  uint64_t offset = location % (GUPS_PAGE_SIZE / elt_size);
+		  index1 = args->hot_start + page * sparse_frac * (GUPS_PAGE_SIZE / elt_size) + offset;
+      	  assert(index1 < args->size);
+		  //fprintf(stderr, "Index: %lld for %d\n", index1, location);
+			if (elt_size == 8) {
+				uint64_t  tmp = field[index1];
+				tmp = tmp + location;
+				field[index1] = tmp;
+			}
+			else {
+				memcpy(data, &field[index1 * elt_size], elt_size);
+				memset(data, data[0] + location, elt_size);
+				memcpy(&field[index1 * elt_size], data, elt_size);
+			}
+	  }
   }
+  
   return 0;
   
 }
@@ -188,6 +196,7 @@ static void *do_gups(void *arguments)
       uint64_t page = location / (GUPS_PAGE_SIZE / elt_size);
       uint64_t offset = location % (GUPS_PAGE_SIZE / elt_size);
       index1 = args->hot_start + page * sparse_frac * (GUPS_PAGE_SIZE / elt_size) + offset;
+      assert(index1 < args->size);
       if (elt_size == 8) {
         uint64_t  tmp = field[index1];
         tmp = tmp + i;
@@ -260,7 +269,7 @@ int main(int argc, char **argv)
   elt_size = atoi(argv[4]);
   log_hot_size = atof(argv[5]);
   sparse_frac = atoi(argv[6]);
-  tot_hot_size = ((unsigned long)(1) << log_hot_size) * sparse_frac;
+  tot_hot_size = ((unsigned long)(1) << log_hot_size);
 
   fprintf(stderr, "%lu updates per thread (%d threads)\n", updates, threads);
   fprintf(stderr, "field of 2^%lu (%lu) bytes\n", expt, size);
@@ -299,10 +308,9 @@ int main(int argc, char **argv)
 
 
   hot_start = 0;
-  hotsize = ((tot_hot_size / threads) / elt_size) / sparse_frac;
+  hotsize = ((tot_hot_size / threads) / elt_size);
   //printf("hot_start: %p\thot_end: %p\thot_size: %lu\n", p + hot_start, p + hot_start + (hotsize * elt_size), hotsize);
 
-  gettimeofday(&starttime, NULL);
   for (i = 0; i < threads; i++) {
     //printf("starting thread [%d]\n", i);
     ga[i] = (struct gups_args*)malloc(sizeof(struct gups_args));
@@ -326,8 +334,11 @@ int main(int argc, char **argv)
       int r = pthread_join(t[i], NULL);
       assert(r == 0);
     }
+    sleep(10);
+    fprintf(stderr, "Finished prefetching\n");
   }
 
+  gettimeofday(&starttime, NULL);
   // run through gups once to touch all memory
   // spawn gups worker threads
   for (i = 0; i < threads; i++) {
@@ -345,9 +356,9 @@ int main(int argc, char **argv)
   gettimeofday(&stoptime, NULL);
 
   secs = elapsed(&starttime, &stoptime);
-  printf("Elapsed time: %.4f seconds.\n", secs);
+  printf("Elapsed time:\t%.4f\tseconds.\n", secs);
   gups = threads * ((double)updates) / (secs * 1.0e9);
-  printf("GUPS = %.10f\n", gups);
+  printf("GUPS =\t%.10f\n", gups);
   //memset(thread_gups, 0, sizeof(thread_gups));
 
   filename = "indices2.txt";
@@ -372,9 +383,9 @@ int main(int argc, char **argv)
   //hemem_clear_stats();
 
   secs = elapsed(&starttime, &stoptime);
-  printf("Elapsed time: %.4f seconds.\n", secs);
+  printf("Elapsed time:\t%.4f\tseconds.\n", secs);
   gups = threads * ((double)updates) / (secs * 1.0e9);
-  printf("GUPS = %.10f\n", gups);
+  printf("GUPS =\t%.10f\n", gups);
 
   //memset(thread_gups, 0, sizeof(thread_gups));
 

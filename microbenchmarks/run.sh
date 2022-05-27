@@ -1,10 +1,13 @@
 #clear-caches
+# Export library
 export LD_LIBRARY_PATH=/usr/local/lib:/proj/tasrdma-PG0/hemem-defrag/src/:${LD_LIBRARY_PATH}
+# Allow a large number of remappings
+echo 1000000 > /proc/sys/vm/max_map_count
 
 rm results.txt
 
 thds=16
-iters=500000000
+iters=100000000
 
 echo never > /sys/kernel/mm/transparent_hugepage/enabled
 echo never > /sys/kernel/mm/transparent_hugepage/defrag
@@ -28,6 +31,7 @@ echo "<=== THP, Sparse set, 8 GB total data, 4 GB hot set, where 1 in 4 normal p
 echo "<=== THP, Sparse set, 8 GB total data, 8 GB hot set, where 1 in 8 normal pages (1 GB) is hot ===>" >> results.txt
 ./gups-pebs-sparse ${thds} ${iters} 33 8 30 8 >> results.txt
 
+
 echo never > /sys/kernel/mm/transparent_hugepage/enabled
 echo never > /sys/kernel/mm/transparent_hugepage/defrag
 echo "<=== Base pages, No THP, Dense set, 8 GB total data, 1 GB hot set ===>" >> results.txt
@@ -49,6 +53,7 @@ echo "<=== Base pages, THP, Sparse set, 8 GB total data, 4 GB hot set, where 1 i
 ./gups-pebs-sparse-base ${thds} ${iters} 33 8 30 4 >> results.txt
 echo "<=== Base pages, THP, Sparse set, 8 GB total data, 8 GB hot set, where 1 in 8 normal pages (1 GB) is hot ===>" >> results.txt
 ./gups-pebs-sparse-base ${thds} ${iters} 33 8 30 8 >> results.txt
+
 # #clear-caches
 # echo "=== 31 ===" >> results.txt
 # numactl -N0 -m0 -- ./gups-pebs 16 1000000000 39 8 31 >> results.txt

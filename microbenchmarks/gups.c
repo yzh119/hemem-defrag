@@ -127,7 +127,8 @@ char *filename = "indices1.txt";
 
 FILE *hotsetfile = NULL;
 
-bool hotset_only = false;
+// bool hotset_only = false;
+bool hotset_only = true;
 
 static void *prefill_hotset(void* arguments)
 {
@@ -140,17 +141,20 @@ static void *prefill_hotset(void* arguments)
 
   index1 = 0;
 
-  for (i = 0; i < args->hotsize; i++) {
-    index1 = i;
-    if (elt_size == 8) {
-      uint64_t  tmp = field[index1];
-      tmp = tmp + i;
-      field[index1] = tmp;
-    }
-    else {
-      memcpy(data, &field[index1 * elt_size], elt_size);
-      memset(data, data[0] + i, elt_size);
-      memcpy(&field[index1 * elt_size], data, elt_size);
+  int iter = 0;
+  for (iter = 0; iter < 1000; ++iter) {
+    for (i = 0; i < args->hotsize; i++) {
+      index1 = i;
+      if (elt_size == 8) {
+        uint64_t  tmp = field[index1];
+        tmp = tmp + i;
+        field[index1] = tmp;
+      }
+      else {
+        memcpy(data, &field[index1 * elt_size], elt_size);
+        memset(data, data[0] + i, elt_size);
+        memcpy(&field[index1 * elt_size], data, elt_size);
+      }
     }
   }
   return 0;
@@ -293,7 +297,6 @@ int main(int argc, char **argv)
   hotsize = (tot_hot_size / threads) / elt_size;
   //printf("hot_start: %p\thot_end: %p\thot_size: %lu\n", p + hot_start, p + hot_start + (hotsize * elt_size), hotsize);
 
-  gettimeofday(&starttime, NULL);
   for (i = 0; i < threads; i++) {
     //printf("starting thread [%d]\n", i);
     ga[i] = (struct gups_args*)malloc(sizeof(struct gups_args));
@@ -316,8 +319,11 @@ int main(int argc, char **argv)
       int r = pthread_join(t[i], NULL);
       assert(r == 0);
     }
+    sleep(2);
+    fprintf(stderr, "Finished prefetching\n");
   }
 
+  gettimeofday(&starttime, NULL);
   // run through gups once to touch all memory
   // spawn gups worker threads
   for (i = 0; i < threads; i++) {
