@@ -157,7 +157,7 @@ static void *hemem_stats_thread()
   for (;;) {
     sleep(1);
     
-    hemem_print_stats();
+    hemem_print_stats(stderr);
     hemem_clear_stats();
   }
   return NULL;
@@ -1152,10 +1152,10 @@ uint64_t hemem_get_bits(struct hemem_page *page)
 }
 #endif
 
-void hemem_print_stats()
+void hemem_print_stats(FILE *stream)
 {
 
-  LOG_STATS("mem_allocated: [%lu]\tpages_allocated: [%lu]\tmissing_faults_handled: [%lu]\tbytes_migrated: [%lu]\tmigrations_up: [%lu]\tmigrations_down: [%lu]\tmigration_waits: [%lu]\n", 
+  fprintf(stream, "mem_allocated: [%lu]\tpages_allocated: [%lu]\tmissing_faults_handled: [%lu]\tbytes_migrated: [%lu]\tmigrations_up: [%lu]\tmigrations_down: [%lu]\tmigration_waits: [%lu]\n", 
                mem_allocated, 
                pages_allocated, 
                missing_faults_handled, 
@@ -1174,6 +1174,12 @@ void hemem_clear_stats()
   missing_faults_handled = 0;
   migrations_up = 0;
   migrations_down = 0;
+}
+
+
+void hemem_clear_stats2()
+{
+  bytes_migrated = 0;
 }
 
 

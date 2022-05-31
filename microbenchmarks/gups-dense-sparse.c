@@ -190,38 +190,72 @@ static void *do_gups(void *arguments)
   uint64_t shift = 9;
   uint64_t shift2 = shift + sparse_frac;
   for (i = 0; i < args->iters; i++) {
-    hot_num = lfsr_fast(lfsr) % 100;
-    if (hot_num < 90) {
-      lfsr = lfsr_fast(lfsr);
-      uint64_t location = (lfsr % args->hotsize);
-      uint64_t page = location >> shift;
-      uint64_t offset = location & ((1 << shift) - 1);
-      index1 = args->hot_start + (page << shift2) + offset;
-      //assert(index1 < args->size);
-      //index1 = args->hot_start + (lfsr % args->hotsize);
-      if (elt_size == 8) {
-        uint64_t  tmp = field[index1];
-        tmp = tmp + i;
-        field[index1] = tmp;
+    if (i < args->iters / 3 && i > 2 * args->iters / 3) {
+      // dense hot set
+      hot_num = lfsr_fast(lfsr) % 100;
+      if (hot_num < 90) {
+        lfsr = lfsr_fast(lfsr);
+        index1 = args->hot_start + (lfsr % args->hotsize);
+        if (elt_size == 8) {
+          uint64_t  tmp = field[index1];
+          tmp = tmp + i;
+          field[index1] = tmp;
+        }
+        else {
+          memcpy(data, &field[index1 * elt_size], elt_size);
+          memset(data, data[0] + i, elt_size);
+          memcpy(&field[index1 * elt_size], data, elt_size);
+        }
+      } else {
+        lfsr = lfsr_fast(lfsr);
+        index2 = lfsr % (args->size);
+        if (elt_size == 8) {
+          uint64_t tmp = field[index2];
+          tmp = tmp + i;
+          field[index2] = tmp;
+        }
+        else {
+          memcpy(data, &field[index2 * elt_size], elt_size);
+          memset(data, data[0] + i, elt_size);
+          memcpy(&field[index2 * elt_size], data, elt_size);
+        }
+      }
+    } else {
+      if (i == args->iters / 3) {
+        fprintf(stderr, "switching to sparse hot set");
+      }
+      // sparse hot set
+      hot_num = lfsr_fast(lfsr) % 100;
+      if (hot_num < 90) {
+        lfsr = lfsr_fast(lfsr);
+        uint64_t location = (lfsr % args->hotsize);
+        uint64_t page = location >> shift;
+        uint64_t offset = location & ((1 << shift) - 1);
+        index1 = args->hot_start + (page << shift2) + offset;
+        if (elt_size == 8) {
+          uint64_t  tmp = field[index1];
+          tmp = tmp + i;
+          field[index1] = tmp;
+        }
+        else {
+          memcpy(data, &field[index1 * elt_size], elt_size);
+          memset(data, data[0] + i, elt_size);
+          memcpy(&field[index1 * elt_size], data, elt_size);
+        }
       }
       else {
-        memcpy(data, &field[index1 * elt_size], elt_size);
-        memset(data, data[0] + i, elt_size);
-        memcpy(&field[index1 * elt_size], data, elt_size);
-      }
-    }
-    else {
-      lfsr = lfsr_fast(lfsr);
-      index2 = lfsr % (args->size);
-      if (elt_size == 8) {
-        uint64_t tmp = field[index2];
-        tmp = tmp + i;
-        field[index2] = tmp;
-      }
-      else {
-        memcpy(data, &field[index2 * elt_size], elt_size);
-        memset(data, data[0] + i, elt_size);
-        memcpy(&field[index2 * elt_size], data, elt_size);
+        lfsr = lfsr_fast(lfsr);
+        index2 = lfsr % (args->size);
+        if (elt_size == 8) {
+          uint64_t tmp = field[index2];
+          tmp = tmp + i;
+          field[index2] = tmp;
+        }
+        else {
+          memcpy(data, &field[index2 * elt_size], elt_size);
+          memset(data, data[0] + i, elt_size);
+          memcpy(&field[index2 * elt_size], data, elt_size);
+        }
       }
     }
   }

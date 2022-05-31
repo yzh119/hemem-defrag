@@ -45,7 +45,7 @@ extern "C" {
 
 #define MEM_BARRIER() __sync_synchronize()
 
-#define NVMSIZE   (7L * (1024L * 1024L * 1024L) + 512L * 1024L * 1024L)
+#define NVMSIZE   (7L * (1024L * 1024L * 1024L) + 768L * 1024L * 1024L)
 #define DRAMSIZE  (1L * (1024L * 1024L * 1024L))
 
 #define DRAMPATH  "/dev/dax0.0"
@@ -221,8 +221,9 @@ void hemem_tlb_shootdown(uint64_t va);
 
 struct hemem_page* get_hemem_page(uint64_t va);
 
-void hemem_print_stats();
+void hemem_print_stats(FILE *stream);
 void hemem_clear_stats();
+void hemem_clear_stats2();
 
 void hemem_start_timing(void);
 void hemem_stop_timing(void);
