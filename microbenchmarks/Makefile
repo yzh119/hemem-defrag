@@ -6,7 +6,7 @@ CFLAGS = -g -Wall -O3
 INCLUDES = -I../linux/usr/include
 LIBS = -lm -lpthread
 
-default: gups-pebs gups-random gups-hotset-move gups-pebs-sparse gups-pebs-dense-sparse gups-pebs-base gups-pebs-sparse-base gups-pebs-dense-sparse-base
+default: gups-pebs gups-random gups-hotset-move gups-pebs-sparse gups-pebs-dense-sparse gups-pebs-base gups-pebs-sparse-base gups-pebs-dense-sparse-base gups-sparse-oracle gups-sparse-oracle-base
 
 all: gups-pebs gups-random gups-simple gups-lru gups-lru-swap gups-hotset-move gups-pebs-sparse gups-pebs-sparse-base gups-pebs-dense-sparse gups-pebs-dense-sparse-base#gups
 
@@ -30,6 +30,12 @@ gups-pebs-sparse: gups-sparse.o
 
 gups-pebs-sparse-base: gups-sparse.o
 	$(CC) $(CFLAGS) $(INCLUDES) -o $@ gups-sparse.o zipf.o $(LIBS) -L$(HEMEMDIR) -lhemem-base
+
+gups-sparse-oracle: gups-sparse-oracle-huge.o
+	$(CC) $(CFLAGS) $(INCLUDES) -o $@ gups-sparse-oracle-huge.o zipf.o  ../src/timer.o $(LIBS) -L$(HEMEMDIR) -D PAGE_SIZE=2097152UL
+
+gups-sparse-oracle-base: gups-sparse-oracle-base.o
+	$(CC) $(CFLAGS) $(INCLUDES) -o $@ gups-sparse-oracle-base.o zipf.o  ../src/timer.o $(LIBS) -L$(HEMEMDIR) -D PAGE_SIZE=4096UL
 
 gups-pebs-dense-sparse: gups-dense-sparse.o
 	$(CC) $(CFLAGS) $(INCLUDES) -o $@ gups-dense-sparse.o zipf.o $(LIBS) -L$(HEMEMDIR) -lhemem
@@ -57,6 +63,12 @@ gups.o: gups.c zipf.c  gups.h
 
 gups-sparse.o: gups-sparse.c zipf.c  gups.h
 	$(CC) $(CFLAGS) $(INCLUDES) -c gups-sparse.c zipf.c
+
+gups-sparse-oracle-base.o: gups-sparse-oracle.c zipf.c  gups.h
+	$(CC) $(CFLAGS) $(INCLUDES) -c gups-sparse-oracle.c -D PAGE_SIZE=4096UL -o $@
+
+gups-sparse-oracle-huge.o: gups-sparse-oracle.c zipf.c  gups.h
+	$(CC) $(CFLAGS) $(INCLUDES) -c gups-sparse-oracle.c -D PAGE_SIZE=2097152UL -o $@
 
 gups-dense-sparse.o: gups-dense-sparse.c zipf.c  gups.h
 	$(CC) $(CFLAGS) $(INCLUDES) -c gups-dense-sparse.c zipf.c
