@@ -1,15 +1,6 @@
-# HeMem
+# Study on fragmentation of HeMem
 
-This document describes the artifact for our [SOSP 2021 paper](https://dl.acm.org/doi/10.1145/3477132.3483550 "SOSP 2021 paper") on HeMem. HeMem is a tiered main memory management system designed from scratch for commercially available NVM and the big data applications that use it. HeMem manages tiered memory asynchronously, batching and amortizing memory access tracking, migration, and associated TLB synchronization overheads. HeMem monitors application memory use by sampling memory access via CPU events, rather than page tables. This allows HeMem to scale to terabytes of memory, keeping small and ephemeral data structures in fast memory, and allocating scarce, asymmetric NVM bandwidth according to access patterns. Finally, HeMem is flexible by placing per-application memory management policy at user-level.
-
-## Overview
-
-* `apps/` contains the application benchmarks evaluated with HeMem
-* `microbenchmarks/` contains the GUPS microbenchmark used to evaluate HeMem
-* `src/` contains the source code of HeMem
-	* `src/policies` contains extra memory policies used for testing HeMem, such as a page-table based LRU policy
-* `Hoard/` contains the Hoard memory allocator that HeMem depends on
-* `linux/` contains the linux kernel version required to run HeMem
+The repo was based on the [artifact](https://bitbucket.org/ajaustin/hemem/src/sosp-submission/) of Hemem.
 
 ### Building and Running HeMem
 
@@ -70,29 +61,10 @@ HeMem requires the user be root in order to run. Applications can either be link
 
 A Makefile is provided to build the GUPS microbenchmarks.
 
-To reproduce the Uniform GUPS results, run the `run-random.sh` script. Results will be printed to the `random.txt` file. The throughput results shown in the paper are the "GUPS" lines.
+To reproduce the internal fragmentation experiments, run the `run-sparse.sh` script.
 
-To reproduce the Hotset GUPS results, run the `run.sh` script. Results will be printed to the `results.txt` file. The throughput results shown in the paper are the "GUPS" lines.
+To reproduce the external fragmentation experiments, run the `run-dense-sparse.sh` script.
 
-To reproduce the Instantaneous GUPS results, run the `run-instantaneous.sh` script. Results will be printed to the `tot_gups.txt` file.
+To reproduce GUPS in oracle setting, run the `run-sparse-oracle.sh` script
 
-### Application Benchmarks
-
-Applications tested with HeMem are located in the `apps/` directory.
-
-#### Silo 
-
-The Silo application can be found in the `apps/silo_hemem/silo` directory.. Run the provided `run_batch.sh` script. Results will be in the `batch/results.txt` file. The reported throughput numbers are numbers in the first column of the file.
-
-#### FlexKVS
-
-The FlexKVS application can be found in the `apps/flexkvs` directory. These results require a separate machine for the clients.
-
-#### GapBS
-
-The GapBS application can be found in the `apps/gapbs` directory. To run the BC algorithm reported in the paper, you may run the following command:
-
-`LD_PRELOAD=/path/to/hemem/lib ./bc -g <scale>`
-
-which will run the bc algorithm with HeMem on a graph with 2^scale vertices.
 
