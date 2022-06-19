@@ -141,21 +141,24 @@ static void *prefill_hotset(void* arguments)
 
   index1 = 0;
 
-  int iter = 0;
-  for (iter = 0; iter < 1000; ++iter) {
-    for (i = 0; i < args->hotsize; i++) {
-      index1 = i;
-      if (elt_size == 8) {
-        uint64_t  tmp = field[index1];
-        tmp = tmp + i;
-        field[index1] = tmp;
-      }
-      else {
-        memcpy(data, &field[index1 * elt_size], elt_size);
-        memset(data, data[0] + i, elt_size);
-        memcpy(&field[index1 * elt_size], data, elt_size);
-      }
-    }
+  for(int iters = 0; iters < 1000; ++iters) {
+  	  uint64_t page;
+	  for (page = 0; page < args->hotsize / (GUPS_PAGE_SIZE / elt_size); page++) {
+		  uint64_t offset = 0;
+		  index1 = args->hot_start + page * (GUPS_PAGE_SIZE / elt_size) + offset;
+      	  assert(index1 < args->size);
+		  //fprintf(stderr, "Index: %lld for %d\n", index1, location);
+			if (elt_size == 8) {
+				uint64_t  tmp = field[index1];
+				tmp = tmp + page;
+				field[index1] = tmp;
+			}
+			else {
+				memcpy(data, &field[index1 * elt_size], elt_size);
+				memset(data, data[0] + page, elt_size);
+				memcpy(&field[index1 * elt_size], data, elt_size);
+			}
+	  }
   }
   return 0;
   
@@ -319,7 +322,7 @@ int main(int argc, char **argv)
       int r = pthread_join(t[i], NULL);
       assert(r == 0);
     }
-    sleep(2);
+    sleep(5);
     fprintf(stderr, "Finished prefetching\n");
   }
 

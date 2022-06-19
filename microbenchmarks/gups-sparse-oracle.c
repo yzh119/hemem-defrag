@@ -47,8 +47,8 @@ int dramfd, nvmfd, uffd;
 #define BASE_PAGE_SIZE      (4 * 1024)
 #define HUGE_PAGE_SIZE (2L * 1024L * 1024)
 
-#define DRAM_SIZE (1L * (1024L * 1024L * 1024L))
-#define NVM_SIZE (7L * (1024L * 1024L * 1024L) + 768L * 1024L * 1024L)
+#define DRAM_SIZE (4L * (1024L * 1024L * 1024L))
+#define NVM_SIZE (64L * (1024L * 1024L * 1024L))
 //#define PAGE_SIZE BASE_PAGE_SIZE
 
 #ifdef HOTSPOT

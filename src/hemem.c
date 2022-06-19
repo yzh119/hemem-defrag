@@ -53,6 +53,7 @@ uint64_t bytes_migrated = 0;
 uint64_t memcpys = 0;
 uint64_t memsets = 0;
 uint64_t migration_waits = 0;
+int tlb_miss_fd[PEBS_NPROCS] = {0};
 
 static bool cr3_set = false;
 uint64_t cr3 = 0;
@@ -285,6 +286,31 @@ void hemem_init()
     assert(s == 0);
   }
 #endif
+
+  {
+    struct perf_event_attr attr;
+    memset(&attr, 0, sizeof(struct perf_event_attr));
+    attr.type = PERF_TYPE_HW_CACHE;
+    attr.size = sizeof(struct perf_event_attr);
+    attr.config = (PERF_COUNT_HW_CACHE_DTLB) | (PERF_COUNT_HW_CACHE_OP_READ << 8) | (PERF_COUNT_HW_CACHE_RESULT_MISS << 16);
+    attr.disabled = 1;
+    //attr.inherit = 1;
+    attr.exclude_kernel = 1;
+    attr.exclude_hv = 1;
+    //attr.exclude_callchain_kernel = 1;
+    //attr.exclude_callchain_user = 1;
+    //attr.precise_ip = 1;
+
+    for(int i = 0; i < PEBS_NPROCS; ++i) {
+      tlb_miss_fd[i] = syscall(__NR_perf_event_open, &attr, -1, i, -1, 0);
+      if(tlb_miss_fd[i] == -1) {
+        perror("Error starting TLB miss counters\n");
+        assert(false);
+      }
+      ioctl(tlb_miss_fd[i], PERF_EVENT_IOC_RESET, 0);
+      ioctl(tlb_miss_fd[i], PERF_EVENT_IOC_ENABLE, 0);
+    }
+  }
 
 #ifdef STATS_THREAD
   s = pthread_create(&stats_thread, NULL, hemem_stats_thread, NULL);
@@ -1154,15 +1180,26 @@ uint64_t hemem_get_bits(struct hemem_page *page)
 
 void hemem_print_stats(FILE *stream)
 {
+  size_t tlb_misses = 0;
 
-  fprintf(stream, "mem_allocated: [%lu]\tpages_allocated: [%lu]\tmissing_faults_handled: [%lu]\tbytes_migrated: [%lu]\tmigrations_up: [%lu]\tmigrations_down: [%lu]\tmigration_waits: [%lu]\n", 
+  for(int i = 0; i < PEBS_NPROCS; ++i) {
+    long long tlb_miss_i = 0;
+    ssize_t s = read(tlb_miss_fd[i], &tlb_miss_i, sizeof(tlb_miss_i));
+    if(s == -1) {
+      perror("Error reading tlb misses\n");
+      assert(false);
+    }
+    tlb_misses += tlb_miss_i;
+  }
+  fprintf(stream, "mem_allocated: [%lu]\tpages_allocated: [%lu]\tmissing_faults_handled: [%lu]\tbytes_migrated: [\t%lu\t]\tmigrations_up: [%lu]\tmigrations_down: [%lu]\tmigration_waits: [%lu]\ttlb_misses: [\t%lu\t]\n", 
                mem_allocated, 
                pages_allocated, 
                missing_faults_handled, 
                bytes_migrated,
                migrations_up, 
                migrations_down,
-               migration_waits);
+               migration_waits,
+               tlb_misses);
    mmgr_stats(); 
 }
 
@@ -1180,6 +1217,8 @@ void hemem_clear_stats()
 void hemem_clear_stats2()
 {
   bytes_migrated = 0;
+  for(int i = 0; i < PEBS_NPROCS; ++i)
+    ioctl(tlb_miss_fd[i], PERF_EVENT_IOC_RESET, 0);
 }
 
 

@@ -35,8 +35,8 @@
 #include <stdbool.h>
 
 #include "../src/timer.h"
-#include "../src/hemem.h"
 
+int dramfd, nvmfd, uffd;
 
 #include "gups.h"
 
@@ -44,8 +44,12 @@
 
 #define PAGE_NUM            3
 #define PAGES               2048
-#define GUPS_PAGE_SIZE      (4 * 1024)
+#define BASE_PAGE_SIZE      (4 * 1024)
 #define HUGE_PAGE_SIZE (2L * 1024L * 1024)
+
+#define DRAM_SIZE (4L * (1024L * 1024L * 1024L))
+#define NVM_SIZE (64L * (1024L * 1024L * 1024L) + 768L * 1024L * 1024L)
+#define NVM_BUFFER_SIZE (4L * (1024L * 1024L * 1024L))
 
 #ifdef HOTSPOT
 extern uint64_t hotset_start;
@@ -68,6 +72,7 @@ struct gups_args {
   uint64_t hot_start;            // start of hot set
   uint64_t hotsize;        // size of hot set
   uint64_t sparse_frac;    // Sparsity index
+  uint64_t nvm_stop_addr;
 };
 
 
@@ -129,7 +134,6 @@ static void *prefill_hotset(void* arguments)
 {
   struct gups_args *args = (struct gups_args*)arguments;
   uint64_t *field = (uint64_t*)(args->field);
-  uint64_t location;
   uint64_t index1;
   uint64_t elt_size = args->elt_size;
   char data[elt_size];
@@ -139,22 +143,22 @@ static void *prefill_hotset(void* arguments)
   uint64_t shift = 9;
   uint64_t shift2 = shift + sparse_frac;
   for(int iters = 0; iters < 100000; ++iters) {
-  	  uint64_t page;
-	  for (page = 0; page < args->hotsize / (GUPS_PAGE_SIZE / elt_size); page++) {
-		  index1 = args->hot_start + (page << shift2);
-      	  //assert(index1 < args->size);
-		  //fprintf(stderr, "Index: %lld for %d\n", index1, location);
-			if (elt_size == 8) {
-				uint64_t  tmp = field[index1];
-				tmp = tmp + page;
-				field[index1] = tmp;
-			}
-			else {
-				memcpy(data, &field[index1 * elt_size], elt_size);
-				memset(data, data[0] + page, elt_size);
-				memcpy(&field[index1 * elt_size], data, elt_size);
-			}
-	  }
+      uint64_t page;
+    for (page = 0; page < args->hotsize / (BASE_PAGE_SIZE / elt_size); page++) {
+      index1 = args->hot_start + (page << shift2);
+          //assert(index1 < args->size);
+      //fprintf(stderr, "Index: %lld for %d\n", index1, location);
+      if (elt_size == 8) {
+        uint64_t  tmp = field[index1];
+        tmp = tmp + page;
+        field[index1] = tmp;
+      }
+      else {
+        memcpy(data, &field[index1 * elt_size], elt_size);
+        memset(data, data[0] + page, elt_size);
+        memcpy(&field[index1 * elt_size], data, elt_size);
+      }
+    }
   }
   return 0;
 }
@@ -170,7 +174,6 @@ static void *do_gups_dense(void *arguments)
   char data[elt_size];
   uint64_t lfsr;
   uint64_t hot_num;
-  uint64_t sparse_frac = args->sparse_frac;
 
   srand(args->tid);
   lfsr = rand();
@@ -180,9 +183,6 @@ static void *do_gups_dense(void *arguments)
 
   fprintf(hotsetfile, "Thread %d region: %p - %p\thot set: %p - %p\n", args->tid, field, field + (args->size * elt_size), field + args->hot_start, field + args->hot_start + (args->hotsize * elt_size));   
 
-  // Page: 12 bits, ELT_Size = 8 -> 3 bits. 12 - 3 = 9 bit shift
-  uint64_t shift = 9;
-  uint64_t shift2 = shift + sparse_frac;
   for (i = 0; i < args->iters; i++) {
     // dense hot set
     hot_num = lfsr_fast(lfsr) % 100;
@@ -289,6 +289,191 @@ static void *do_gups_sparse(void *arguments)
   return 0;
 }
 
+static void *map_memory(void *arguments) {
+  struct gups_args *args = (struct gups_args*)arguments;
+  uint64_t *field = (uint64_t*)(args->field);
+  uint64_t size = args->size * args->elt_size;
+  
+  size_t nvm_size = (NVM_SIZE / threads);
+  size_t dram_size = (DRAM_SIZE / threads);
+  
+  off_t nvm_offset = nvm_size * args->tid;
+  off_t dram_offset = dram_size * args->tid;
+  uint64_t elt_size = args->elt_size;
+  char data[elt_size];
+  
+  uint64_t stride = HUGE_PAGE_SIZE / sizeof(uint64_t);
+  // Map each page to appropriate location
+  for(int page = 0; page < size / HUGE_PAGE_SIZE; ++page) {
+    void *newptr;
+    if(dram_size >= HUGE_PAGE_SIZE) {
+      newptr = mmap((void*)&field[page * stride], HUGE_PAGE_SIZE, PROT_READ | PROT_WRITE, MAP_SHARED | MAP_POPULATE | MAP_FIXED, dramfd, dram_offset);
+      dram_size -= HUGE_PAGE_SIZE;
+      dram_offset += HUGE_PAGE_SIZE;
+    if (newptr == MAP_FAILED) {
+        fprintf(stderr, "line %d: %d %ld %ld\n", __LINE__, page, page * stride, dram_offset);
+      perror("newptr mmap  ");
+      assert(0);
+    }
+    if (newptr != (void*)&field[page * stride]) {
+      fprintf(stderr, "mapped address is not same as faulting address\n");
+      assert(false);
+    }
+    }
+    else {
+      newptr = mmap((void*)&field[page * stride], HUGE_PAGE_SIZE, PROT_READ | PROT_WRITE, MAP_SHARED | MAP_POPULATE | MAP_FIXED, nvmfd, nvm_offset);
+      nvm_size -= HUGE_PAGE_SIZE;
+      nvm_offset += HUGE_PAGE_SIZE;
+      if(nvm_size <= 0) {
+      fprintf(stderr, "Out of memory line %d\n", __LINE__);
+      assert(false);
+    }
+    if (newptr == MAP_FAILED) {
+        fprintf(stderr, "line %d: %d %ld %ld\n", __LINE__, page, page * stride, nvm_offset);
+      perror("newptr mmap  ");
+      assert(0);
+    }
+    if (newptr != (void*)&field[page * stride]) {
+      fprintf(stderr, "mapped address is not same as faulting address\n");
+      assert(false);
+    }
+    }
+    
+    memcpy(data, &field[page * stride], elt_size);
+    memset(data, data[0] + page, elt_size);
+    memcpy(&field[page * stride], data, elt_size);
+  }
+  
+  return 0;
+}
+
+static void *map_sparse(void *arguments) {
+  struct gups_args *args = (struct gups_args*)arguments;
+  uint64_t *field = (uint64_t*)(args->field);
+  uint64_t sparse_frac = args->sparse_frac;
+  uint64_t size = args->size * args->elt_size;
+  uint64_t hot_pages = args->hotsize / (BASE_PAGE_SIZE / args->elt_size);
+  uint64_t id = args->tid;
+  
+  size_t nvm_size = (NVM_SIZE / threads);
+  size_t dram_size = (DRAM_SIZE / threads);
+  
+  off_t nvm_offset = nvm_size * args->tid;
+  off_t dram_offset = dram_size * args->tid;
+  uint64_t elt_size = args->elt_size;
+  char data[BASE_PAGE_SIZE];
+  
+  size_t nvm_buffer_size = (NVM_BUFFER_SIZE / threads);
+  
+  // Create buffer region in NVM, and move current hot set to NVM
+  void *p = mmap(NULL, hot_pages * BASE_PAGE_SIZE, PROT_READ | PROT_WRITE, MAP_SHARED | MAP_POPULATE | MAP_FIXED, nvmfd, NVM_SIZE + id * hot_pages * BASE_PAGE_SIZE);
+  if (p == MAP_FAILED) {
+      fprintf(stderr, "line %d\n", __LINE__);
+    perror("newptr mmap  ");
+    assert(0);
+  }
+  memcpy(p, field, hot_pages * BASE_PAGE_SIZE);
+  // Map old address to new region
+  void *newptr = mmap(field, hot_pages * BASE_PAGE_SIZE, PROT_READ | PROT_WRITE, MAP_SHARED | MAP_POPULATE | MAP_FIXED, nvmfd, NVM_SIZE + id * hot_pages * BASE_PAGE_SIZE);
+  if (newptr == MAP_FAILED) {
+      fprintf(stderr, "line %d\n", __LINE__);
+    perror("newptr mmap  ");
+    assert(0);
+  }
+  if (newptr != (void*)field) {
+    fprintf(stderr, "mapped address is not same as faulting address\n");
+    assert(false);
+  }
+  // Move new hot set to DRAM
+  uint64_t sparsity = 1 << sparse_frac;
+  uint64_t stride = sparsity * BASE_PAGE_SIZE / sizeof(uint64_t);
+  // Map each page to appropriate location
+  for(int page = 0; page < hot_pages; page++) {
+    if(dram_size >= BASE_PAGE_SIZE) {
+      memcpy(data, &field[page * stride], BASE_PAGE_SIZE);
+      newptr = mmap((void*)&field[page * stride], BASE_PAGE_SIZE, PROT_READ | PROT_WRITE, MAP_SHARED | MAP_POPULATE | MAP_FIXED, dramfd, dram_offset);
+      if (newptr == MAP_FAILED) {
+        fprintf(stderr, "line %d: %d %ld %ld\n", __LINE__, page, page * stride, dram_offset);
+        perror("newptr mmap  ");
+        assert(0);
+      }
+      if (newptr != (void*)&field[page * stride]) {
+        fprintf(stderr, "mapped address is not same as faulting address\n");
+        assert(false);
+      }
+      memcpy(&field[page * stride], data, BASE_PAGE_SIZE);
+      dram_size -= BASE_PAGE_SIZE;
+      dram_offset += BASE_PAGE_SIZE;
+    }
+  }
+  
+  return 0;
+}
+
+static void *map_dense(void *arguments) {
+  struct gups_args *args = (struct gups_args*)arguments;
+  uint64_t *field = (uint64_t*)(args->field);
+  uint64_t sparse_frac = args->sparse_frac;
+  uint64_t size = args->size * args->elt_size;
+  uint64_t hot_pages = args->hotsize / (BASE_PAGE_SIZE / args->elt_size);
+  uint64_t id = args->tid;
+  
+  size_t nvm_size = (NVM_SIZE / threads);
+  size_t dram_size = (DRAM_SIZE / threads);
+  
+  off_t nvm_offset = nvm_size * args->tid;
+  off_t dram_offset = dram_size * args->tid;
+  uint64_t elt_size = args->elt_size;
+  char data[BASE_PAGE_SIZE];
+  
+  size_t nvm_buffer_size = (NVM_BUFFER_SIZE / threads);
+  
+  // Move current DRAM data to appropriate location
+  uint64_t sparsity = 1 << sparse_frac;
+  uint64_t stride = sparsity * BASE_PAGE_SIZE / sizeof(uint64_t);
+  // Map each page to appropriate location
+  for(int page = 0; page < hot_pages; page++) {
+    memcpy(data, &field[page * stride], BASE_PAGE_SIZE);
+    void *newptr;
+    if(page * stride * sizeof(uint64_t) < nvm_buffer_size)
+      newptr = mmap((void*)&field[page * stride], BASE_PAGE_SIZE, PROT_READ | PROT_WRITE, MAP_SHARED | MAP_POPULATE | MAP_FIXED, 
+        nvmfd, NVM_SIZE + id * hot_pages * BASE_PAGE_SIZE + page * stride * sizeof(uint64_t));
+    else
+      newptr = mmap((void*)&field[page * stride], BASE_PAGE_SIZE, PROT_READ | PROT_WRITE, MAP_SHARED | MAP_POPULATE | MAP_FIXED, 
+        nvmfd, nvm_offset + page * stride * sizeof(uint64_t) - hot_pages * BASE_PAGE_SIZE);
+      
+    if (newptr == MAP_FAILED) {
+      fprintf(stderr, "line %d: %d %ld %ld\n", __LINE__, page, page * stride, dram_offset);
+      perror("newptr mmap  ");
+      assert(0);
+    }
+    if (newptr != (void*)&field[page * stride]) {
+      fprintf(stderr, "mapped address is not same as faulting address\n");
+      assert(false);
+    }
+    memcpy(&field[page * stride], data, BASE_PAGE_SIZE);
+    dram_size -= BASE_PAGE_SIZE;
+    dram_offset += BASE_PAGE_SIZE;
+  }
+  
+  // Move dense hot set to NVM
+  void *p = mmap(NULL, dram_size, PROT_READ | PROT_WRITE, MAP_SHARED | MAP_POPULATE | MAP_FIXED | MAP_HUGETLB, dramfd, dram_offset);
+  memcpy(p, field, dram_size);
+  // Map old address to new region
+  void *newptr = mmap(field, dram_size, PROT_READ | PROT_WRITE, MAP_SHARED | MAP_POPULATE | MAP_FIXED | MAP_HUGETLB, dramfd, dram_offset);
+  if (newptr == MAP_FAILED) {
+    fprintf(stderr, "line %d\n", __LINE__);
+    perror("newptr mmap  ");
+    assert(0);
+  }
+  if (newptr != (void*)field) {
+    fprintf(stderr, "mapped address is not same as faulting address\n");
+    assert(false);
+  }
+  
+  return 0;
+}
+
 int main(int argc, char **argv)
 {
   unsigned long expt;
@@ -303,6 +488,8 @@ int main(int argc, char **argv)
   struct gups_args** ga;
   char *log_filename;
   pthread_t t[MAX_THREADS];
+  pthread_t t2[MAX_THREADS];
+  pthread_t t3[MAX_THREADS];
 
   if (argc != 8) {
     fprintf(stderr, "Usage: %s [threads] [updates per thread] [exponent] [data size (bytes)] [noremap/remap] [sparse_frac]\n", argv[0]);
@@ -341,7 +528,7 @@ int main(int argc, char **argv)
   fprintf(stderr, "field of 2^%lu (%lu) bytes\n", expt, size);
   fprintf(stderr, "%ld byte element size (%ld elements total)\n", elt_size, size / elt_size);
 
-  p = mmap(NULL, size, PROT_READ | PROT_WRITE, MAP_SHARED | MAP_ANONYMOUS | MAP_HUGETLB | MAP_POPULATE, -1, 0);
+  p = mmap(NULL, size, PROT_READ | PROT_WRITE, MAP_SHARED | MAP_ANONYMOUS | MAP_POPULATE, -1, 0);
   if (p == MAP_FAILED) {
     perror("mmap");
     assert(0);
@@ -366,7 +553,10 @@ int main(int argc, char **argv)
   secs = elapsed(&starttime, &stoptime);
   fprintf(stderr, "Initialization time: %.4f seconds.\n", secs);
 
-  //hemem_start_timing();
+  //pthread_t print_thread;
+  //int pt = pthread_create(&print_thread, NULL, print_instantaneous_gups, NULL);
+  //assert(pt == 0);
+
 
   hot_start = 0;
   hotsize = ((tot_hot_size / threads) / elt_size);
@@ -385,6 +575,28 @@ int main(int argc, char **argv)
     ga[i]->sparse_frac = sparse_frac;
   }
 
+  dramfd = open("/dev/dax0.0", O_RDWR);
+  if (dramfd < 0) {
+    perror("dram open");
+  }
+  assert(dramfd >= 0);
+
+  nvmfd = open("/dev/dax1.0", O_RDWR);
+  if (nvmfd < 0) {
+    perror("nvm open");
+  }
+  assert(nvmfd >= 0);
+  
+  for (i = 0; i < threads; i++) {
+    int r = pthread_create(&t[i], NULL, map_memory, (void*)ga[i]);
+  assert(r == 0);
+  }
+  // wait for worker threads
+  for (i = 0; i < threads; i++) {
+    int r = pthread_join(t[i], NULL);
+    assert(r == 0);
+  }
+/*
   if (hotset_only) {
     for (i = 0; i < threads; i++) {
       int r = pthread_create(&t[i], NULL, prefill_hotset, (void*)ga[i]);
@@ -398,7 +610,7 @@ int main(int argc, char **argv)
     sleep(5);
     fprintf(stderr, "Finished prefetching\n");
   }
-
+*/
   gettimeofday(&starttime, NULL);
   // run through gups once to touch all memory
   // spawn gups worker threads
@@ -412,7 +624,6 @@ int main(int argc, char **argv)
     int r = pthread_join(t[i], NULL);
     assert(r == 0);
   }
-  //hemem_print_stats();
 
   gettimeofday(&stoptime, NULL);
 
@@ -431,7 +642,6 @@ int main(int argc, char **argv)
   fprintf(stderr, "Timing.\n");
   gettimeofday(&starttime, NULL);
 
-  hemem_clear_stats2();
   // spawn gups worker threads
   for (i = 0; i < threads; i++) {
     int r = pthread_create(&t[i], NULL, do_gups_dense, (void*)ga[i]);
@@ -441,6 +651,12 @@ int main(int argc, char **argv)
   // wait for worker threads
   for (i = 0; i < threads; i++) {
     int r = pthread_join(t[i], NULL);
+    assert(r == 0);
+  }
+  
+  // Transfer hot set
+  for (i = 0; i < threads; i++) {
+    int r = pthread_create(&t2[i], NULL, map_sparse, (void*)ga[i]);
     assert(r == 0);
   }
   
@@ -454,8 +670,13 @@ int main(int argc, char **argv)
     int r = pthread_join(t[i], NULL);
     assert(r == 0);
   }
-  
-  
+  /*
+  // Transfer hot set
+  for (i = 0; i < threads; i++) {
+    int r = pthread_create(&t3[i], NULL, map_dense, (void*)ga[i]);
+    assert(r == 0);
+  }
+  */
   for (i = 0; i < threads; i++) {
     int r = pthread_create(&t[i], NULL, do_gups_dense, (void*)ga[i]);
     assert(r == 0);
@@ -470,7 +691,6 @@ int main(int argc, char **argv)
   memset(thread_gups, 0, sizeof(thread_gups));
   
   gettimeofday(&stoptime, NULL);
-  hemem_print_stats(stdout);
 
   secs = elapsed(&starttime, &stoptime);
   printf("Elapsed time:\t%.4f\tseconds.\t", secs);
@@ -478,18 +698,6 @@ int main(int argc, char **argv)
   printf("GUPS =\t%.10f\n", gups);
 
 
-#if 0
-  FILE* pebsfile = fopen("pebs.txt", "w+");
-  assert(pebsfile != NULL);
-  for (uint64_t addr = (uint64_t)p; addr < (uint64_t)p + size; addr += (2*1024*1024)) {
-    struct hemem_page *pg = get_hemem_page(addr);
-    assert(pg != NULL);
-    if (pg != NULL) {
-      fprintf(pebsfile, "0x%lx:\t%lu\t%lu\t%lu\n", pg->va, pg->tot_accesses[DRAMREAD], pg->tot_accesses[NVMREAD], pg->tot_accesses[WRITE]);
-    }
-  }
-#endif
-  //hemem_stop_timing();
 
   for (i = 0; i < threads; i++) {
     //free(ga[i]->indices);
